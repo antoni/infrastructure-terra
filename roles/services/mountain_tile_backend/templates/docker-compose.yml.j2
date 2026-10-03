@@ -1,0 +1,54 @@
+---
+services:
+  nginx:
+    image: "${NGINX_IMAGE}"
+    container_name: mountain_tile_backend_nginx
+    restart: unless-stopped
+    depends_on:
+      - pmtiles
+    ports:
+      - "127.0.0.1:${HOST_PORT}:80"
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx
+      - /run
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - NET_BIND_SERVICE
+      - SETGID
+      - SETUID
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./releases:/srv/releases:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  pmtiles:
+    image: "${PMTILES_IMAGE}"
+    container_name: mountain_tile_backend_pmtiles
+    restart: unless-stopped
+    command:
+      - serve
+      - /data
+      - --port=8080
+      - --cache-size=${PMTILES_CACHE_SIZE_MB}
+    expose:
+      - "8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    volumes:
+      - ./releases:/data:ro

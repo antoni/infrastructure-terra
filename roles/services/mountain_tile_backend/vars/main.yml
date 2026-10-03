@@ -1,0 +1,8 @@
+---
+mountain_tile_backend_nginx_dir: "{{ mountain_tile_backend_project_dir }}/nginx"
+mountain_tile_backend_bin_dir: "{{ mountain_tile_backend_project_dir }}/bin"
+mountain_tile_backend_compose_path: "{{ mountain_tile_backend_project_dir }}/docker-compose.yml"
+mountain_tile_backend_env_path: "{{ mountain_tile_backend_project_dir }}/.env"
+mountain_tile_backend_container_nginx_path: "{{ mountain_tile_backend_nginx_dir }}/default.conf"
+mountain_tile_backend_vhost_available_path: "{{ mountain_tile_backend_nginx_sites_available_dir }}/{{ mountain_tile_backend_nginx_vhost_name }}"
+mountain_tile_backend_vhost_enabled_path: "{{ mountain_tile_backend_nginx_sites_enabled_dir }}/{{ mountain_tile_backend_nginx_vhost_name }}"

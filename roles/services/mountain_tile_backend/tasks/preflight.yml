@@ -1,0 +1,132 @@
+---
+- name: Validate mountain_tile_backend variables
+  ansible.builtin.assert:
+    that:
+      - mountain_tile_backend_project_dir is string
+      - mountain_tile_backend_project_dir | length > 1
+      - mountain_tile_backend_project_dir[0] == '/'
+      - mountain_tile_backend_release_root[0] == '/'
+      - mountain_tile_backend_domain is match('^[A-Za-z0-9.-]+$')
+      - mountain_tile_backend_public_scheme in ['http', 'https']
+      - mountain_tile_backend_host_port | int > 0
+      - mountain_tile_backend_host_port | int < 65536
+      - mountain_tile_backend_pmtiles_cache_size_mb | int > 0
+      - mountain_tile_backend_health_retries | int > 0
+      - mountain_tile_backend_health_delay | int >= 0
+      - mountain_tile_backend_current_cache_seconds | int >= 0
+      - mountain_tile_backend_immutable_cache_seconds | int > 0
+      - mountain_tile_backend_activate_release == '' or
+        (mountain_tile_backend_activate_release is match('^[A-Za-z0-9._-]+$'))
+    fail_msg: Invalid mountain_tile_backend role configuration.
+
+- name: Check Docker CLI
+  ansible.builtin.command:
+    argv:
+      - docker
+      - --version
+  register: mountain_tile_backend_docker_version
+  changed_when: false
+
+- name: Check Docker Compose v2
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - version
+  register: mountain_tile_backend_compose_version
+  changed_when: false
+
+- name: Check requested release before activation
+  ansible.builtin.stat:
+    path: "{{ mountain_tile_backend_release_root }}/{{ mountain_tile_backend_activate_release }}"
+  register: mountain_tile_backend_requested_release_stat
+  when: mountain_tile_backend_activate_release | length > 0
+
+- name: Require requested release to already exist
+  ansible.builtin.assert:
+    that:
+      - mountain_tile_backend_requested_release_stat.stat.exists | default(false)
+      - mountain_tile_backend_requested_release_stat.stat.isdir | default(false)
+    fail_msg: >-
+      Requested release {{ mountain_tile_backend_activate_release }} does not exist at
+      {{ mountain_tile_backend_release_root }}/{{ mountain_tile_backend_activate_release }}.
+      terrain-platform must build/copy the complete release before this role activates it.
+  when: mountain_tile_backend_activate_release | length > 0
+
+- name: Inspect existing current path
+  ansible.builtin.stat:
+    path: "{{ mountain_tile_backend_current_path }}"
+    follow: false
+  register: mountain_tile_backend_current_stat
+
+- name: Refuse a non-symlink current path
+  ansible.builtin.assert:
+    that:
+      - >-
+        not (mountain_tile_backend_current_stat.stat.exists | default(false)) or
+        (mountain_tile_backend_current_stat.stat.islnk | default(false))
+    fail_msg: >-
+      {{ mountain_tile_backend_current_path }} exists but is not a symlink.
+      Refusing to replace it because release activation must be atomic.
+
+
+- name: Resolve managed TLS certificate paths
+  ansible.builtin.set_fact:
+    mountain_tile_backend_effective_certificate: >-
+      {{
+        '/etc/letsencrypt/live/' ~ mountain_tile_backend_domain ~ '/fullchain.pem'
+        if mountain_tile_backend_certificate_mode == 'letsencrypt'
+        else (
+          '/var/lib/tailscale/certs/' ~ mountain_tile_backend_domain ~ '.crt'
+          if mountain_tile_backend_certificate_mode == 'tailscale'
+          else mountain_tile_backend_manual_certificate
+        )
+      }}
+    mountain_tile_backend_effective_certificate_key: >-
+      {{
+        '/etc/letsencrypt/live/' ~ mountain_tile_backend_domain ~ '/privkey.pem'
+        if mountain_tile_backend_certificate_mode == 'letsencrypt'
+        else (
+          '/var/lib/tailscale/certs/' ~ mountain_tile_backend_domain ~ '.key'
+          if mountain_tile_backend_certificate_mode == 'tailscale'
+          else mountain_tile_backend_manual_certificate_key
+        )
+      }}
+  when:
+    - mountain_tile_backend_manage_vhost | bool
+    - mountain_tile_backend_public_scheme == 'https'
+
+- name: Validate managed certificate mode
+  ansible.builtin.assert:
+    that:
+      - mountain_tile_backend_certificate_mode in ['letsencrypt', 'tailscale', 'manual']
+      - mountain_tile_backend_effective_certificate | length > 0
+      - mountain_tile_backend_effective_certificate_key | length > 0
+    fail_msg: Invalid managed TLS certificate configuration.
+  when:
+    - mountain_tile_backend_manage_vhost | bool
+    - mountain_tile_backend_public_scheme == 'https'
+
+- name: Check managed TLS certificate files
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ mountain_tile_backend_effective_certificate }}"
+    - "{{ mountain_tile_backend_effective_certificate_key }}"
+  register: mountain_tile_backend_certificate_stats
+  when:
+    - mountain_tile_backend_manage_vhost | bool
+    - mountain_tile_backend_public_scheme == 'https'
+
+- name: Require managed TLS certificate files
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists | default(false)
+      - item.stat.isreg | default(false)
+    fail_msg: "Managed TLS certificate file is missing: {{ item.item }}"
+  loop: "{{ mountain_tile_backend_certificate_stats.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - mountain_tile_backend_manage_vhost | bool
+    - mountain_tile_backend_public_scheme == 'https'

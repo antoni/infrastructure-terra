@@ -1,0 +1,30 @@
+---
+- name: Restart mountain_tile_backend compose
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-directory
+      - "{{ mountain_tile_backend_project_dir }}"
+      - --project-name
+      - "{{ mountain_tile_backend_compose_project }}"
+      - up
+      - -d
+      - --force-recreate
+      - --remove-orphans
+  changed_when: true
+  listen: Restart mountain_tile_backend compose
+
+- name: Validate host nginx
+  ansible.builtin.command:
+    argv:
+      - nginx
+      - -t
+  changed_when: false
+  listen: Reload host nginx
+
+- name: Reload host nginx
+  ansible.builtin.service:
+    name: nginx
+    state: reloaded
+  listen: Reload host nginx

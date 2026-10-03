@@ -1,0 +1,207 @@
+---
+- name: Render Compose environment
+  ansible.builtin.template:
+    src: backend.env.j2
+    dest: "{{ mountain_tile_backend_env_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart mountain_tile_backend compose
+
+- name: Render Docker Compose
+  ansible.builtin.template:
+    src: docker-compose.yml.j2
+    dest: "{{ mountain_tile_backend_compose_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart mountain_tile_backend compose
+
+- name: Render container Nginx server block
+  ansible.builtin.template:
+    src: default.conf.j2
+    dest: "{{ mountain_tile_backend_container_nginx_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart mountain_tile_backend compose
+
+- name: Read currently active release
+  ansible.builtin.command:
+    argv:
+      - readlink
+      - -f
+      - "{{ mountain_tile_backend_current_path }}"
+  register: mountain_tile_backend_current_readlink
+  changed_when: false
+  failed_when: false
+
+- name: Resolve release to validate and serve
+  ansible.builtin.set_fact:
+    mountain_tile_backend_active_release: >-
+      {{
+        mountain_tile_backend_activate_release
+        if (mountain_tile_backend_activate_release | length > 0)
+        else (
+          mountain_tile_backend_current_readlink.stdout | basename
+          if mountain_tile_backend_current_readlink.rc == 0
+          else ''
+        )
+      }}
+
+- name: Require an active release
+  ansible.builtin.assert:
+    that:
+      - mountain_tile_backend_active_release | length > 0
+      - mountain_tile_backend_active_release is match('^[A-Za-z0-9._-]+$')
+    fail_msg: >-
+      No active release exists. Copy a complete terrain-platform release below
+      {{ mountain_tile_backend_release_root }} and set mountain_tile_backend_activate_release.
+
+- name: Validate release contract
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ mountain_tile_backend_bin_dir }}/validate_release.py"
+      - --release-dir
+      - "{{ mountain_tile_backend_release_root }}/{{ mountain_tile_backend_active_release }}"
+      - --release-id
+      - "{{ mountain_tile_backend_active_release }}"
+      - --public-base-url
+      - "{{ mountain_tile_backend_public_base_url }}"
+  changed_when: false
+  when: mountain_tile_backend_validate_release | bool
+
+- name: Check PMTiles image
+  ansible.builtin.command:
+    argv:
+      - docker
+      - image
+      - inspect
+      - "{{ mountain_tile_backend_pmtiles_image }}"
+  register: mountain_tile_backend_pmtiles_image_inspect
+  changed_when: false
+  failed_when: false
+  when: mountain_tile_backend_verify_pmtiles | bool
+
+- name: Pull PMTiles image when absent
+  ansible.builtin.command:
+    argv:
+      - docker
+      - pull
+      - "{{ mountain_tile_backend_pmtiles_image }}"
+  when:
+    - mountain_tile_backend_verify_pmtiles | bool
+    - mountain_tile_backend_pmtiles_image_inspect.rc != 0
+  changed_when: true
+
+- name: Find PMTiles archives in active release
+  ansible.builtin.find:
+    paths: "{{ mountain_tile_backend_release_root }}/{{ mountain_tile_backend_active_release }}/pmtiles"
+    patterns: "*.pmtiles"
+    file_type: file
+    recurse: false
+  register: mountain_tile_backend_pmtiles_archives
+  when: mountain_tile_backend_verify_pmtiles | bool
+
+- name: Verify every PMTiles archive before activation
+  ansible.builtin.command:
+    argv:
+      - docker
+      - run
+      - --rm
+      - --read-only
+      - --security-opt
+      - no-new-privileges:true
+      - --cap-drop
+      - ALL
+      - -v
+      - "{{ mountain_tile_backend_release_root }}/{{ mountain_tile_backend_active_release }}/pmtiles:/data:ro"
+      - "{{ mountain_tile_backend_pmtiles_image }}"
+      - verify
+      - "/data/{{ item.path | basename }}"
+  loop: "{{ mountain_tile_backend_pmtiles_archives.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  changed_when: false
+  when: mountain_tile_backend_verify_pmtiles | bool
+
+- name: Atomically activate requested release
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd {{ mountain_tile_backend_release_root | quote }}
+    ln -sfn -- {{ mountain_tile_backend_active_release | quote }} .current.next
+    mv -Tf -- .current.next current
+  args:
+    executable: /bin/bash
+  when:
+    - mountain_tile_backend_activate_release | length > 0
+    - mountain_tile_backend_current_readlink.rc != 0 or
+      (mountain_tile_backend_current_readlink.stdout | basename) != mountain_tile_backend_active_release
+  changed_when: true
+
+- name: Remove configured legacy vhosts
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: >-
+    {{
+      (
+        mountain_tile_backend_legacy_vhosts
+        | map('regex_replace', '^(.*)$', mountain_tile_backend_nginx_sites_enabled_dir ~ '/\\1')
+        | list
+      )
+      +
+      (
+        mountain_tile_backend_legacy_vhosts
+        | map('regex_replace', '^(.*)$', mountain_tile_backend_nginx_sites_available_dir ~ '/\\1')
+        | list
+      )
+    }}
+  when:
+    - mountain_tile_backend_cleanup_legacy_vhosts | bool
+    - mountain_tile_backend_manage_vhost | bool
+  notify: Reload host nginx
+
+- name: Ensure host Nginx site directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  loop:
+    - "{{ mountain_tile_backend_nginx_sites_available_dir }}"
+    - "{{ mountain_tile_backend_nginx_sites_enabled_dir }}"
+  when: mountain_tile_backend_manage_vhost | bool
+
+- name: Render host reverse-proxy vhost
+  ansible.builtin.template:
+    src: nginx-vhost.conf.j2
+    dest: "{{ mountain_tile_backend_vhost_available_path }}"
+    owner: root
+    group: root
+    mode: "0644"
+  when: mountain_tile_backend_manage_vhost | bool
+  notify: Reload host nginx
+
+- name: Enable host reverse-proxy vhost
+  ansible.builtin.file:
+    src: "{{ mountain_tile_backend_vhost_available_path }}"
+    dest: "{{ mountain_tile_backend_vhost_enabled_path }}"
+    state: link
+    force: true
+  when: mountain_tile_backend_manage_vhost | bool
+  notify: Reload host nginx
+
+- name: Remove managed host vhost when disabled
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ mountain_tile_backend_vhost_enabled_path }}"
+    - "{{ mountain_tile_backend_vhost_available_path }}"
+  when:
+    - not mountain_tile_backend_manage_vhost | bool
+    - mountain_tile_backend_remove_vhost_when_disabled | bool
+  notify: Reload host nginx

@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  role_name: mountain_tile_backend
+  description: Deploy and serve immutable Mountain Map releases through Nginx and PMTiles.
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Debian
+    - name: Ubuntu
+
+dependencies: []

@@ -1,0 +1,107 @@
+---
+- name: Start mountain_tile_backend services
+  ansible.builtin.command:
+    argv:
+      - docker
+      - compose
+      - --project-directory
+      - "{{ mountain_tile_backend_project_dir }}"
+      - --project-name
+      - "{{ mountain_tile_backend_compose_project }}"
+      - up
+      - -d
+      - --remove-orphans
+  changed_when: false
+
+- name: Wait for local health check
+  block:
+    - name: Poll /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mountain_tile_backend_host_port }}/healthz"
+        method: GET
+        status_code: 204
+        return_content: false
+      register: mountain_tile_backend_health_result
+      retries: "{{ mountain_tile_backend_health_retries }}"
+      delay: "{{ mountain_tile_backend_health_delay }}"
+      until: mountain_tile_backend_health_result.status == 204
+      changed_when: false
+  rescue:
+    - name: Capture recent compose logs
+      ansible.builtin.command:
+        argv:
+          - docker
+          - compose
+          - --project-directory
+          - "{{ mountain_tile_backend_project_dir }}"
+          - --project-name
+          - "{{ mountain_tile_backend_compose_project }}"
+          - logs
+          - --tail
+          - "50"
+      register: mountain_tile_backend_failed_logs
+      changed_when: false
+      failed_when: false
+
+    - name: Fail with service logs
+      ansible.builtin.fail:
+        msg: |-
+          mountain_tile_backend failed its local health check.
+          Recent logs:
+          {{ mountain_tile_backend_failed_logs.stdout | default('No logs available') }}
+
+- name: Smoke check current capabilities
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ mountain_tile_backend_host_port }}/api/capabilities"
+    method: GET
+    status_code: 200
+    return_content: true
+  register: mountain_tile_backend_capabilities_smoke
+  changed_when: false
+  when: mountain_tile_backend_smoke_tests | bool
+
+- name: Assert capabilities is a JSON object
+  ansible.builtin.assert:
+    that:
+      - mountain_tile_backend_capabilities_smoke.content | from_json is mapping
+  when: mountain_tile_backend_smoke_tests | bool
+
+- name: Find active release TileJSON files
+  ansible.builtin.find:
+    paths: "{{ mountain_tile_backend_release_root }}/{{ mountain_tile_backend_active_release }}/tilejson"
+    patterns: "*.json"
+    file_type: file
+    recurse: false
+  register: mountain_tile_backend_tilejson_files
+  when: mountain_tile_backend_smoke_tests | bool
+
+- name: Smoke check every TileJSON through versioned release URL
+  ansible.builtin.uri:
+    url: >-
+      http://127.0.0.1:{{ mountain_tile_backend_host_port }}/releases/{{
+      mountain_tile_backend_active_release }}/tilejson/{{ item.path | basename }}
+    method: GET
+    status_code: 200
+    return_content: true
+  loop: "{{ mountain_tile_backend_tilejson_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  register: mountain_tile_backend_tilejson_smoke
+  changed_when: false
+  when: mountain_tile_backend_smoke_tests | bool
+
+- name: Smoke check one real tile from every PMTiles dataset
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ mountain_tile_backend_bin_dir }}/smoke_pmtiles.py"
+      - --release-root
+      - "{{ mountain_tile_backend_release_root }}"
+      - --release
+      - "{{ mountain_tile_backend_active_release }}"
+      - --base-url
+      - "http://127.0.0.1:{{ mountain_tile_backend_host_port }}"
+      - --timeout
+      - "{{ mountain_tile_backend_smoke_timeout_seconds | string }}"
+  changed_when: false
+  when: mountain_tile_backend_smoke_tests | bool

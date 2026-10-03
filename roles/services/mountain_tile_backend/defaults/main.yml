@@ -1,0 +1,55 @@
+---
+mountain_tile_backend_project_dir: /opt/mountain_tile_backend
+mountain_tile_backend_domain: radar.telomere.cloud
+mountain_tile_backend_public_scheme: https
+mountain_tile_backend_public_base_url: "{{ mountain_tile_backend_public_scheme }}://{{ mountain_tile_backend_domain }}"
+
+mountain_tile_backend_host_port: 8090
+mountain_tile_backend_nginx_image: nginx:1.27-alpine
+mountain_tile_backend_pmtiles_image: ghcr.io/protomaps/go-pmtiles:v1.31.2
+mountain_tile_backend_pmtiles_cache_size_mb: 256
+mountain_tile_backend_compose_project: mountain_tile_backend
+
+mountain_tile_backend_release_root: "{{ mountain_tile_backend_project_dir }}/releases"
+mountain_tile_backend_current_path: "{{ mountain_tile_backend_release_root }}/current"
+
+# Set to an immutable release directory name such as "2026.10.0" to activate it.
+# Leave empty to keep the currently active release.
+mountain_tile_backend_activate_release: ""
+
+# Release validation is intentionally deployment-focused. Product/schema validation
+# remains the terrain-platform pipeline's responsibility.
+mountain_tile_backend_validate_release: true
+mountain_tile_backend_verify_pmtiles: true
+
+mountain_tile_backend_health_retries: 20
+mountain_tile_backend_health_delay: 2
+mountain_tile_backend_smoke_tests: true
+mountain_tile_backend_smoke_timeout_seconds: 10
+
+# Cache mutable "current" aliases briefly. Versioned release assets and tiles are
+# immutable and may be cached for one year by the CDN.
+mountain_tile_backend_current_cache_seconds: 300
+mountain_tile_backend_immutable_cache_seconds: 31536000
+
+# Host reverse-proxy/vhost management remains opt-in. The container binds only to
+# loopback, and the host reverse proxy owns public TLS/security policy.
+mountain_tile_backend_manage_vhost: false
+mountain_tile_backend_remove_vhost_when_disabled: false
+mountain_tile_backend_cleanup_legacy_vhosts: true
+mountain_tile_backend_legacy_vhosts:
+  - maps.example.com
+
+mountain_tile_backend_nginx_sites_available_dir: /etc/nginx/sites-available
+mountain_tile_backend_nginx_sites_enabled_dir: /etc/nginx/sites-enabled
+mountain_tile_backend_nginx_vhost_name: mountain_tile_backend.conf
+
+# Certificate paths are only checked/used when manage_vhost=true and scheme=https.
+mountain_tile_backend_certificate_mode: letsencrypt  # letsencrypt | tailscale | manual
+mountain_tile_backend_manual_certificate: ""
+mountain_tile_backend_manual_certificate_key: ""
+
+# Optional host-level includes/ACLs. Keep empty if the shared host reverse-proxy
+# role already owns these concerns.
+mountain_tile_backend_host_nginx_includes: []
+mountain_tile_backend_host_allow_cidrs: []
