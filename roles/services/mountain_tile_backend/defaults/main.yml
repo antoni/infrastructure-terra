@@ -1,5 +1,7 @@
 ---
 mountain_tile_backend_project_dir: /opt/mountain_tile_backend
+mountain_tile_backend_owner: root
+mountain_tile_backend_group: root
 mountain_tile_backend_domain: radar.telomere.cloud
 mountain_tile_backend_public_scheme: https
 mountain_tile_backend_public_base_url: "{{ mountain_tile_backend_public_scheme }}://{{ mountain_tile_backend_domain }}"
@@ -11,6 +13,7 @@ mountain_tile_backend_pmtiles_cache_size_mb: 256
 mountain_tile_backend_compose_project: mountain_tile_backend
 
 mountain_tile_backend_release_root: "{{ mountain_tile_backend_project_dir }}/releases"
+mountain_tile_backend_tile_store: "{{ mountain_tile_backend_project_dir }}/tile-store"
 mountain_tile_backend_current_path: "{{ mountain_tile_backend_release_root }}/current"
 
 # Set to an immutable release directory name such as "2026.10.0" to activate it.
@@ -20,6 +23,7 @@ mountain_tile_backend_activate_release: ""
 # Release validation is intentionally deployment-focused. Product/schema validation
 # remains the terrain-platform pipeline's responsibility.
 mountain_tile_backend_validate_release: true
+mountain_tile_backend_require_publishable: true
 mountain_tile_backend_verify_pmtiles: true
 
 mountain_tile_backend_health_retries: 20
@@ -36,7 +40,7 @@ mountain_tile_backend_immutable_cache_seconds: 31536000
 # loopback, and the host reverse proxy owns public TLS/security policy.
 mountain_tile_backend_manage_vhost: false
 mountain_tile_backend_remove_vhost_when_disabled: false
-mountain_tile_backend_cleanup_legacy_vhosts: true
+mountain_tile_backend_cleanup_legacy_vhosts: false
 mountain_tile_backend_legacy_vhosts:
   - maps.example.com
 

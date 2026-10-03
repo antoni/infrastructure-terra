@@ -13,19 +13,36 @@ import json
 import re
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import unquote, urlsplit
 
 SAFE_RELEASE = re.compile(r"^[A-Za-z0-9._-]+$")
 SAFE_DATASET = re.compile(r"^[A-Za-z0-9._@+-]+$")
 TILE_PATH = re.compile(
-    r"^/tiles/(?P<release>[A-Za-z0-9._-]+)/"
-    r"(?P<dataset>[A-Za-z0-9._@+-]+)/"
+    r"^/tiles/(?P<dataset>[A-Za-z0-9._@+-]+)/"
+    r"(?P<version>[A-Fa-f0-9]{12})/"
     r"\{z\}/\{x\}/\{y\}\.(?:mvt|pbf|mlt|png|jpg|webp|avif)$"
 )
 
 
 class ValidationError(RuntimeError):
     pass
+
+
+def asset_path(url: str, release_dir: Path, release_id: str, public_base: str, *, template=False) -> Path:
+    if not isinstance(url, str):
+        raise ValidationError(f"asset URL must be a string: {url!r}")
+    parsed, public = urlsplit(url), urlsplit(public_base)
+    if (parsed.scheme or parsed.netloc) and (parsed.scheme, parsed.netloc) != (public.scheme, public.netloc):
+        raise ValidationError(f"asset URL must use the configured public origin: {url}")
+    prefix = f"/releases/{release_id}/"
+    if not parsed.path.startswith(prefix):
+        raise ValidationError(f"asset URL must use immutable {prefix} URLs: {url}")
+    path = (release_dir / unquote(parsed.path[len(prefix):])).resolve()
+    if not path.is_relative_to(release_dir):
+        raise ValidationError(f"asset URL escapes the release: {url}")
+    if not template and not path.is_file():
+        raise ValidationError(f"asset URL references a missing file: {url}")
+    return path
 
 
 def load_json_object(path: Path) -> dict:
@@ -42,7 +59,7 @@ def validate(args: argparse.Namespace) -> None:
     release_dir = Path(args.release_dir).resolve()
     release_id = args.release_id
 
-    if not SAFE_RELEASE.fullmatch(release_id):
+    if not SAFE_RELEASE.fullmatch(release_id) or release_id in (".", "..", "current"):
         raise ValidationError(f"unsafe release id: {release_id!r}")
     if release_dir.name != release_id:
         raise ValidationError(
@@ -64,32 +81,50 @@ def validate(args: argparse.Namespace) -> None:
         if not path.is_dir():
             raise ValidationError(f"missing required release directory: {path}")
 
-    load_json_object(release_dir / "capabilities.json")
-    load_json_object(release_dir / "manifest.json")
+    capabilities = load_json_object(release_dir / "capabilities.json")
+    manifest = load_json_object(release_dir / "manifest.json")
+    if capabilities.get("release") != release_id or manifest.get("release") != release_id:
+        raise ValidationError("capabilities and manifest must identify this release")
+    if args.require_publishable == "true" and manifest.get("publishable") is not True:
+        raise ValidationError("release is not publishable; allow only for a private rehearsal")
+    for collection, key in (("styles", "url"), ("datasets", "tilejson")):
+        entries = capabilities.get(collection)
+        if not isinstance(entries, list) or not entries:
+            raise ValidationError(f"capabilities.{collection} must be a non-empty list")
+        for entry in entries:
+            if not isinstance(entry, dict) or key not in entry:
+                raise ValidationError(f"capabilities.{collection} contains an invalid entry")
+            asset_path(entry[key], release_dir, release_id, args.public_base_url)
 
     style_files = sorted((release_dir / "styles").glob("*.json"))
     if not style_files:
         raise ValidationError("styles/ must contain at least one JSON style")
     for path in style_files:
-        load_json_object(path)
+        style = load_json_object(path)
+        for source in style.get("sources", {}).values():
+            if "url" in source:
+                asset_path(source["url"], release_dir, release_id, args.public_base_url)
+        if "glyphs" in style:
+            asset_path(style["glyphs"], release_dir, release_id, args.public_base_url, template=True)
 
-    pmtiles_files = sorted((release_dir / "pmtiles").glob("*.pmtiles"))
+    pmtiles_files = sorted((release_dir / "pmtiles").glob("*/*.pmtiles"))
     if not pmtiles_files:
         raise ValidationError("pmtiles/ must contain at least one .pmtiles archive")
 
-    pmtiles_by_stem = {}
+    pmtiles_by_id = {}
     for path in pmtiles_files:
-        if not SAFE_DATASET.fullmatch(path.stem):
+        dataset = path.parent.name
+        if not SAFE_DATASET.fullmatch(dataset) or not re.fullmatch(r"[A-Fa-f0-9]{12}", path.stem):
             raise ValidationError(
-                f"PMTiles archive name must be URL-safe and stable: {path.name}"
+                f"PMTiles archive must be pmtiles/<dataset>/<12-hex-version>.pmtiles: {path}"
             )
-        pmtiles_by_stem[path.stem] = path
+        pmtiles_by_id[(dataset, path.stem)] = path
 
     tilejson_files = sorted((release_dir / "tilejson").glob("*.json"))
     if not tilejson_files:
         raise ValidationError("tilejson/ must contain at least one TileJSON document")
 
-    referenced_archives: set[str] = set()
+    referenced_archives: set[tuple[str, str]] = set()
     public = urlsplit(args.public_base_url)
     for path in tilejson_files:
         doc = load_json_object(path)
@@ -111,26 +146,21 @@ def validate(args: argparse.Namespace) -> None:
             if not match:
                 raise ValidationError(
                     f"{path}: tile URL does not match "
-                    f"/tiles/<release>/<dataset>/{{z}}/{{x}}/{{y}}.<ext>: {tile_url}"
+                    f"/tiles/<dataset>/<12-hex-version>/{{z}}/{{x}}/{{y}}.<ext>: {tile_url}"
                 )
-            if match.group("release") != release_id:
+            archive_id = (match.group("dataset"), match.group("version"))
+            referenced_archives.add(archive_id)
+            if archive_id not in pmtiles_by_id:
                 raise ValidationError(
-                    f"{path}: tile URL is not versioned with active release {release_id}: "
-                    f"{tile_url}"
+                    f"{path}: tile URL references {archive_id[0]}/{archive_id[1]}, but "
+                    f"pmtiles/{archive_id[0]}/{archive_id[1]}.pmtiles does not exist"
                 )
 
-            dataset = match.group("dataset")
-            referenced_archives.add(dataset)
-            if dataset not in pmtiles_by_stem:
-                raise ValidationError(
-                    f"{path}: tile URL references dataset {dataset!r}, but "
-                    f"pmtiles/{dataset}.pmtiles does not exist"
-                )
-
-    unreferenced = sorted(set(pmtiles_by_stem) - referenced_archives)
+    unreferenced = sorted(set(pmtiles_by_id) - referenced_archives)
     if unreferenced:
         raise ValidationError(
-            "PMTiles archives without any TileJSON tile URL: " + ", ".join(unreferenced)
+            "PMTiles archives without any TileJSON tile URL: "
+            + ", ".join(f"{dataset}/{version}" for dataset, version in unreferenced)
         )
 
 
@@ -139,6 +169,7 @@ def main() -> int:
     parser.add_argument("--release-dir", required=True)
     parser.add_argument("--release-id", required=True)
     parser.add_argument("--public-base-url", required=True)
+    parser.add_argument("--require-publishable", choices=("true", "false"), default="true")
     args = parser.parse_args()
 
     try:

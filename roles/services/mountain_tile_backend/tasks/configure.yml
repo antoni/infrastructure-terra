@@ -3,8 +3,8 @@
   ansible.builtin.template:
     src: backend.env.j2
     dest: "{{ mountain_tile_backend_env_path }}"
-    owner: root
-    group: root
+    owner: "{{ mountain_tile_backend_owner }}"
+    group: "{{ mountain_tile_backend_group }}"
     mode: "0600"
   notify: Restart mountain_tile_backend compose
 
@@ -12,8 +12,8 @@
   ansible.builtin.template:
     src: docker-compose.yml.j2
     dest: "{{ mountain_tile_backend_compose_path }}"
-    owner: root
-    group: root
+    owner: "{{ mountain_tile_backend_owner }}"
+    group: "{{ mountain_tile_backend_group }}"
     mode: "0644"
   notify: Restart mountain_tile_backend compose
 
@@ -21,8 +21,8 @@
   ansible.builtin.template:
     src: default.conf.j2
     dest: "{{ mountain_tile_backend_container_nginx_path }}"
-    owner: root
-    group: root
+    owner: "{{ mountain_tile_backend_owner }}"
+    group: "{{ mountain_tile_backend_group }}"
     mode: "0644"
   notify: Restart mountain_tile_backend compose
 
@@ -69,6 +69,8 @@
       - "{{ mountain_tile_backend_active_release }}"
       - --public-base-url
       - "{{ mountain_tile_backend_public_base_url }}"
+      - --require-publishable
+      - "{{ mountain_tile_backend_require_publishable | bool | ternary('true', 'false') }}"
   changed_when: false
   when: mountain_tile_backend_validate_release | bool
 
@@ -100,7 +102,7 @@
     paths: "{{ mountain_tile_backend_release_root }}/{{ mountain_tile_backend_active_release }}/pmtiles"
     patterns: "*.pmtiles"
     file_type: file
-    recurse: false
+    recurse: true
   register: mountain_tile_backend_pmtiles_archives
   when: mountain_tile_backend_verify_pmtiles | bool
 
@@ -119,12 +121,24 @@
       - "{{ mountain_tile_backend_release_root }}/{{ mountain_tile_backend_active_release }}/pmtiles:/data:ro"
       - "{{ mountain_tile_backend_pmtiles_image }}"
       - verify
-      - "/data/{{ item.path | basename }}"
+      - "/data/{{ item.path | dirname | basename }}/{{ item.path | basename }}"
   loop: "{{ mountain_tile_backend_pmtiles_archives.files | default([]) }}"
   loop_control:
     label: "{{ item.path | basename }}"
   changed_when: false
   when: mountain_tile_backend_verify_pmtiles | bool
+
+- name: Retain content-addressed archives before activation
+  ansible.builtin.command:
+    argv:
+      - python3
+      - "{{ mountain_tile_backend_bin_dir }}/sync_tile_store.py"
+      - --release-dir
+      - "{{ mountain_tile_backend_release_root }}/{{ mountain_tile_backend_active_release }}"
+      - --tile-store
+      - "{{ mountain_tile_backend_tile_store }}"
+  register: mountain_tile_backend_tile_store_sync
+  changed_when: "'indexed ' in mountain_tile_backend_tile_store_sync.stdout"
 
 - name: Atomically activate requested release
   ansible.builtin.shell: |
@@ -142,21 +156,12 @@
 
 - name: Remove configured legacy vhosts
   ansible.builtin.file:
-    path: "{{ item }}"
+    path: "{{ item.0 }}/{{ item.1 }}"
     state: absent
   loop: >-
     {{
-      (
-        mountain_tile_backend_legacy_vhosts
-        | map('regex_replace', '^(.*)$', mountain_tile_backend_nginx_sites_enabled_dir ~ '/\\1')
-        | list
-      )
-      +
-      (
-        mountain_tile_backend_legacy_vhosts
-        | map('regex_replace', '^(.*)$', mountain_tile_backend_nginx_sites_available_dir ~ '/\\1')
-        | list
-      )
+      [mountain_tile_backend_nginx_sites_enabled_dir, mountain_tile_backend_nginx_sites_available_dir]
+      | product(mountain_tile_backend_legacy_vhosts) | list
     }}
   when:
     - mountain_tile_backend_cleanup_legacy_vhosts | bool
@@ -167,8 +172,8 @@
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ mountain_tile_backend_owner }}"
+    group: "{{ mountain_tile_backend_group }}"
     mode: "0755"
   loop:
     - "{{ mountain_tile_backend_nginx_sites_available_dir }}"
@@ -179,8 +184,8 @@
   ansible.builtin.template:
     src: nginx-vhost.conf.j2
     dest: "{{ mountain_tile_backend_vhost_available_path }}"
-    owner: root
-    group: root
+    owner: "{{ mountain_tile_backend_owner }}"
+    group: "{{ mountain_tile_backend_group }}"
     mode: "0644"
   when: mountain_tile_backend_manage_vhost | bool
   notify: Reload host nginx

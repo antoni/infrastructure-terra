@@ -1,0 +1,11 @@
+---
+all:
+  children:
+    tile_backend:
+      hosts:
+        tiles:
+          ansible_host: REPLACE_WITH_HOST
+          ansible_user: REPLACE_WITH_SSH_USER
+          mountain_tile_backend_domain: tiles.example.com
+          mountain_tile_backend_manage_vhost: false
+          mountain_tile_backend_cleanup_legacy_vhosts: false

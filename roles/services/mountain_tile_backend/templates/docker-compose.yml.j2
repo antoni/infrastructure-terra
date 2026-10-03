@@ -2,7 +2,6 @@
 services:
   nginx:
     image: "${NGINX_IMAGE}"
-    container_name: mountain_tile_backend_nginx
     restart: unless-stopped
     depends_on:
       - pmtiles
@@ -24,7 +23,7 @@ services:
       - SETUID
     volumes:
       - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./releases:/srv/releases:ro
+      - "{{ mountain_tile_backend_release_root }}:/srv/releases:ro"
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
       interval: 15s
@@ -34,7 +33,6 @@ services:
 
   pmtiles:
     image: "${PMTILES_IMAGE}"
-    container_name: mountain_tile_backend_pmtiles
     restart: unless-stopped
     command:
       - serve
@@ -51,4 +49,4 @@ services:
     cap_drop:
       - ALL
     volumes:
-      - ./releases:/data:ro
+      - "{{ mountain_tile_backend_tile_store }}:/data:ro"

@@ -33,7 +33,8 @@ class SmokeError(RuntimeError):
 
 
 def read_header(path: Path) -> dict:
-    data = path.read_bytes()[:127]
+    with path.open("rb") as stream:
+        data = stream.read(127)
     if len(data) < 127 or data[:7] != b"PMTiles" or data[7] != 3:
         raise SmokeError(f"{path}: not a PMTiles v3 archive")
 
@@ -88,16 +89,17 @@ def candidate_tiles(header: dict):
                         yield z, x, y
 
 
-def request_one(base_url: str, release: str, archive: Path, timeout: int) -> str:
+def request_one(base_url: str, archive: Path, timeout: int) -> str:
     header = read_header(archive)
-    dataset = archive.stem
+    version = archive.stem
+    dataset = archive.parent.name
     attempts = []
 
     for z, x, y in candidate_tiles(header):
         url = (
             f"{base_url.rstrip('/')}/tiles/"
-            f"{quote(release, safe='._-')}/"
             f"{quote(dataset, safe='._@+-')}/"
+            f"{quote(version, safe='')}/"
             f"{z}/{x}/{y}.{header['ext']}"
         )
         req = Request(url, headers={"User-Agent": "mountain_tile_backend-smoke/1"})
@@ -128,15 +130,15 @@ def main() -> int:
     args = parser.parse_args()
 
     pmtiles_dir = Path(args.release_root) / args.release / "pmtiles"
-    archives = sorted(pmtiles_dir.glob("*.pmtiles"))
+    archives = sorted(pmtiles_dir.glob("*/*.pmtiles"))
     if not archives:
         print(f"no PMTiles archives found in {pmtiles_dir}", file=sys.stderr)
         return 1
 
     try:
         for archive in archives:
-            url = request_one(args.base_url, args.release, archive, args.timeout)
-            print(f"ok {archive.name}: {url}")
+            url = request_one(args.base_url, archive, args.timeout)
+            print(f"ok {archive.parent.name}/{archive.name}: {url}")
     except SmokeError as exc:
         print(str(exc), file=sys.stderr)
         return 1

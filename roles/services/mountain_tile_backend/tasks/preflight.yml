@@ -6,6 +6,7 @@
       - mountain_tile_backend_project_dir | length > 1
       - mountain_tile_backend_project_dir[0] == '/'
       - mountain_tile_backend_release_root[0] == '/'
+      - mountain_tile_backend_tile_store[0] == '/'
       - mountain_tile_backend_domain is match('^[A-Za-z0-9.-]+$')
       - mountain_tile_backend_public_scheme in ['http', 'https']
       - mountain_tile_backend_host_port | int > 0
@@ -17,6 +18,7 @@
       - mountain_tile_backend_immutable_cache_seconds | int > 0
       - mountain_tile_backend_activate_release == '' or
         (mountain_tile_backend_activate_release is match('^[A-Za-z0-9._-]+$'))
+      - mountain_tile_backend_activate_release not in ['.', '..', 'current']
     fail_msg: Invalid mountain_tile_backend role configuration.
 
 - name: Check Docker CLI

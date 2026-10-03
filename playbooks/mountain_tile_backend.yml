@@ -1,0 +1,6 @@
+---
+- name: Deploy Mountain Map tile origin
+  hosts: tile_backend
+  become: true
+  roles:
+    - role: services/mountain_tile_backend

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- add the repository playbook, empty default inventory, private inventory example,
+  controller setup and CI;
+- match terrain-platform's `/tiles/<dataset>/<sha12>/...` URLs and nested archives;
+- retain archives in a shared content-addressed tile store for activation and rollback;
+- verify nested PMTiles before activation and read only the fixed archive header for smoke tests;
+- require publishable manifests and immutable asset URLs by default, with an explicit
+  private-rehearsal override;
+- disable legacy vhost cleanup by default and correct its optional path expansion;
+- use Compose project names to isolate stacks;
+- add a generated-data rehearsal for deployment, idempotence, rejection, retention and rollback.
+
 ## 2.0.0
 
 Architecture update to match the Mountain Map technical plan:

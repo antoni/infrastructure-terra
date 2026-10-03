@@ -20,10 +20,10 @@ Cloudflare / host reverse proxy
  releases/*      pmtiles serve
                     |
                     v
-       releases/<release>/pmtiles/*.pmtiles
+       tile-store/<dataset>/<hash>.pmtiles
 ```
 
-The Compose stack mounts the **entire** release root, not only `current`. This is intentional: versioned URLs for retained releases continue to resolve after `current` moves.
+Nginx mounts the entire release root. PMTiles mounts a shared content-addressed tile store populated before activation. Retained release assets and previously deployed tile versions remain available after `current` moves.
 
 ## Release contract
 
@@ -38,8 +38,8 @@ releases/2026.10.0/
 ├── tilejson/
 │   └── ...
 ├── pmtiles/
-│   ├── terrain-rgb.pmtiles
-│   └── contours.pmtiles
+│   ├── elevation/<sha12>.pmtiles
+│   └── base/<sha12>.pmtiles
 └── metadata/
     └── ...
 ```
@@ -48,7 +48,9 @@ Generated data does not live in the infrastructure repository.
 
 The deployment validator checks:
 
-- `capabilities.json` and root `manifest.json` exist and are JSON objects;
+- `capabilities.json` and root `manifest.json` exist, identify the release, and are JSON objects;
+- `manifest.publishable` is true unless `mountain_tile_backend_require_publishable: false` is explicitly set for a private rehearsal;
+- capabilities and style source URLs reference existing immutable release assets;
 - `styles/`, `tilejson/`, `pmtiles/`, and `metadata/` exist;
 - at least one style JSON, TileJSON, and PMTiles archive exists;
 - each TileJSON has a non-empty `tiles` array;
@@ -83,26 +85,26 @@ They are sent with one-year immutable caching.
 Online tiles use:
 
 ```text
-/tiles/<release>/<dataset>/<z>/<x>/<y>.<ext>
+/tiles/<dataset>/<sha12>/<z>/<x>/<y>.<ext>
 ```
 
 and map to:
 
 ```text
-releases/<release>/pmtiles/<dataset>.pmtiles
+tile-store/<dataset>/<sha12>.pmtiles
 ```
 
 Example:
 
 ```text
-/tiles/2026.10.0/terrain-rgb/12/2201/1375.webp
+/tiles/elevation/5a8ddd56ff08/12/2201/1375.webp
 ```
 
-This role deliberately does not hardcode `terrain-rgb`, `contours`, or any other dataset name.
+The role does not hardcode dataset names. `<sha12>` is the first 12 hex characters of the archive SHA-256.
 
 For MVT archives, native PMTiles serving uses `.mvt`. Nginx also accepts a public `.pbf` URL and translates it to `.mvt` internally for compatibility.
 
-`terrain-platform` should emit TileJSON URLs using this contract. If later the project chooses independently versioned dataset IDs instead of release IDs, the role can keep the same generic proxy pattern while the public URL contract is revised deliberately.
+This matches terrain-platform’s existing URL contract. Build release assets with `--public-base https://<domain>/releases/<release>` (or the root-relative equivalent). Local-development `/release/...` URLs are rejected. The indexer verifies content hashes and retains archives with hard links, falling back to copying across filesystems. Archive pruning is deferred until a retention policy exists.
 
 ## Activation
 
@@ -153,7 +155,7 @@ The origin sends:
 
 - short cache headers for mutable `current` aliases such as `/api/capabilities` and `/styles/...`;
 - `Cache-Control: public, max-age=31536000, immutable` for `/releases/<release>/...`;
-- the same immutable cache header for `/tiles/<release>/...`.
+- the same immutable cache header for `/tiles/<dataset>/<sha12>/...`.
 
 Configure Cloudflare Cache Rules so the versioned tile/release namespaces are cache-eligible. Do not apply immutable caching to a URL whose bytes can change.
 
@@ -184,3 +186,7 @@ Those remain later phases. The stable external discovery/TileJSON/tile contracts
 The previous role generated bootstrap styles, TileJSON, metadata and fixed per-layer static XYZ directories. Those concepts are intentionally absent here.
 
 A first deployment therefore requires a real `terrain-platform` release on disk before this role can start successfully.
+
+## Validation and repository entry points
+
+See the [repository README](../../../README.md) for inventory setup, playbook commands, synthetic release generation and the local Docker rehearsal. The role’s loopback serving, activation and rollback have local integration coverage. Remote SSH, TLS, certificates and Cloudflare must still be tested on the actual deployment host. Legacy vhost cleanup is disabled by default.

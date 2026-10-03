@@ -3,27 +3,36 @@
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
-    owner: root
-    group: root
+    owner: "{{ mountain_tile_backend_owner }}"
+    group: "{{ mountain_tile_backend_group }}"
     mode: "{{ item.mode }}"
   loop:
     - { path: "{{ mountain_tile_backend_project_dir }}", mode: "0755" }
     - { path: "{{ mountain_tile_backend_nginx_dir }}", mode: "0755" }
     - { path: "{{ mountain_tile_backend_bin_dir }}", mode: "0755" }
     - { path: "{{ mountain_tile_backend_release_root }}", mode: "0755" }
+    - { path: "{{ mountain_tile_backend_tile_store }}", mode: "0755" }
 
 - name: Install release validator
   ansible.builtin.copy:
     src: validate_release.py
     dest: "{{ mountain_tile_backend_bin_dir }}/validate_release.py"
-    owner: root
-    group: root
+    owner: "{{ mountain_tile_backend_owner }}"
+    group: "{{ mountain_tile_backend_group }}"
     mode: "0755"
 
 - name: Install PMTiles smoke checker
   ansible.builtin.copy:
     src: smoke_pmtiles.py
     dest: "{{ mountain_tile_backend_bin_dir }}/smoke_pmtiles.py"
-    owner: root
-    group: root
+    owner: "{{ mountain_tile_backend_owner }}"
+    group: "{{ mountain_tile_backend_group }}"
+    mode: "0755"
+
+- name: Install content-addressed tile store indexer
+  ansible.builtin.copy:
+    src: sync_tile_store.py
+    dest: "{{ mountain_tile_backend_bin_dir }}/sync_tile_store.py"
+    owner: "{{ mountain_tile_backend_owner }}"
+    group: "{{ mountain_tile_backend_group }}"
     mode: "0755"
