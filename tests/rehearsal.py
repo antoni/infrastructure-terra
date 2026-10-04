@@ -16,6 +16,7 @@ import shutil
 import socket
 import subprocess
 import sys
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 from PIL import Image
@@ -143,6 +144,12 @@ def main():
                 with urlopen(base + path) as response:
                     assert response.read().startswith(b"\x89PNG")
                     assert "immutable" in response.headers["Cache-Control"]
+            # go-pmtiles ignores x and y at zoom 0; the role must not pass such URLs on.
+            try:
+                urlopen(base + first.replace("/0/0/0.png", "/0/1/0.png"))
+                raise AssertionError("zoom-0 tile with x=1 was served")
+            except HTTPError as error:
+                assert error.code == 404, error.code
             with urlopen(f"{base}/releases/{release}/styles/synthetic.json") as response:
                 assert json.load(response)["version"] == 8
         print("PASS: deployment, repeat run, invalid-release rejection, release switch, retained tiles, rollback")

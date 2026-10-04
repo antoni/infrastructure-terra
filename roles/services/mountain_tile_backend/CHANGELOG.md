@@ -11,7 +11,11 @@
   private-rehearsal override;
 - disable legacy vhost cleanup by default and correct its optional path expansion;
 - use Compose project names to isolate stacks;
-- add a generated-data rehearsal for deployment, idempotence, rejection, retention and rollback.
+- add a generated-data rehearsal for deployment, idempotence, rejection, retention and rollback;
+- answer 404 for any zoom-0 tile other than `0/0/0` (go-pmtiles ignores x and y at zoom 0, which made every
+  such URL a distinct cache key for the same tile) and bound the digits of z, x and y in the tile routes;
+- add remote_rehearsal.py (the release lifecycle against a real host over an SSH tunnel) and
+  remote_security.py (traversal, method, tile-edge-case, TLS and header probes).
 
 ## 2.0.0
 

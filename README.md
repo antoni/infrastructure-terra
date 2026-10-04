@@ -64,6 +64,15 @@ The role checks capabilities, versioned TileJSON and a real tile from every
 archive. Also test the same paths through the configured host reverse proxy
 before declaring the remote deployment verified.
 
+## Remote rehearsal and security probes
+
+With the prerequisites installed on a host (Docker, Compose, Python; installed by hand, the role does not do it)
+and a private inventory, `tests/remote_rehearsal.py` runs the release lifecycle there (first deployment, a repeat
+with zero changes, rejection of an invalid release, a switch with the old tile URLs still served, rollback), and
+`tests/remote_security.py` probes the public path (redirects, TLS versions, path traversal, methods, tile edge cases,
+cache headers). Both need `--host`/`--inventory`; see their docstrings. The probes list hardening gaps that are not
+the role's to close (HSTS, rate limiting, a catch-all `default_server`) as GAP without failing the run.
+
 ## Terrain releases
 
 Build a release with immutable asset URLs, using the actual origin and release ID:
