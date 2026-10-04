@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- never serve `/releases/<id>/analysis/` (the analysis COGs are for the API only; a release copied whole would have
+  published them): found by probing the origin on the test host, covered by both rehearsals and the security probes;
+
 - sit behind the shared `reverse_proxy` role (yourorg.shared_roles) instead of managing nginx policy:
   the vhost includes its snippets and takes its certificate paths from its variables; Docker comes from
   `geerlingguy.docker`; `playbooks/tile_backend_host.yml` runs the three in order;

@@ -71,6 +71,9 @@ def fixture(release_root, release_id, colour):
     write_json(release / "manifest.json", {"release": release_id, "publishable": False,
                                           "note": "Synthetic local deployment rehearsal"})
     write_json(release / "metadata/sources.json", {"sources": []})
+    cog = release / "analysis/terrain-analysis/0123456789ab.tif"  # stands in for a COG meant for the API only
+    cog.parent.mkdir(parents=True)
+    cog.write_bytes(b"II*\x00" + bytes(4096))
     return url.replace("{z}", "0").replace("{x}", "0").replace("{y}", "0")
 
 
@@ -144,6 +147,12 @@ def main():
                 with urlopen(base + path) as response:
                     assert response.read().startswith(b"\x89PNG")
                     assert "immutable" in response.headers["Cache-Control"]
+            # Analysis COGs are for the API only: a release copied whole must not publish them.
+            try:
+                urlopen(f"{base}/releases/{release}/analysis/terrain-analysis/0123456789ab.tif")
+                raise AssertionError("an analysis COG is served to the public")
+            except HTTPError as error:
+                assert error.code == 404, error.code
             # go-pmtiles ignores x and y at zoom 0; the role must not pass such URLs on.
             try:
                 urlopen(base + first.replace("/0/0/0.png", "/0/1/0.png"))

@@ -53,6 +53,8 @@ make deps                        # geerlingguy.docker and the shared roles, pinn
 
 Required per host (private inventory): `mountain_tile_backend_domain`, and for Let's Encrypt `reverse_proxy_email`. DNS for the domain must point at the host before the first run.
 
+**Analysis COGs are never served.** A release carries the analysis COGs under `analysis/<dataset>/<hash>.tif` for the API (elevation, slope and aspect on the native grid; about 10 MB per km², terabytes for the Alps). They are not for apps, so the origin answers 404 for anything below `/releases/<id>/analysis/`, even if the whole release directory was copied to this host. Copy only what the origin needs (`rsync --exclude=/analysis/ ...`); the COGs belong on the host that runs the API.
+
 ## Release contract
 
 `terrain-platform` must copy a complete immutable release before this role is run:

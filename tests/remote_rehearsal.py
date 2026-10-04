@@ -85,6 +85,11 @@ def main():
             return out.stdout
 
         def check(release, retained):
+            try:
+                urlopen(f"{base}/releases/{release}/analysis/terrain-analysis/0123456789ab.tif")
+                raise AssertionError("an analysis COG is served to the public")
+            except HTTPError as error:
+                assert error.code == 404, error.code
             with urlopen(f"{base}/api/capabilities") as r:
                 assert json.load(r)["release"] == release, "capabilities name another release"
             with urlopen(f"{base}/releases/{release}/styles/synthetic.json") as r:

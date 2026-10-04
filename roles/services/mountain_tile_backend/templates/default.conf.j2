@@ -94,6 +94,13 @@ server {
     # metadata, sprites/glyphs, raw PMTiles and other release artifacts without
     # teaching Nginx individual dataset names.
     location ^~ /releases/ {
+        # A release carries the analysis COGs (analysis/<dataset>/<hash>.tif) for the API. They are never for
+        # apps and run to terabytes, so a release directory copied whole to this host must not publish them.
+        # (A separate regex location would not be reached: this ^~ prefix stops regex matching.)
+        if ($uri ~ "^/releases/[^/]+/analysis(/|$)") {
+            return 404;
+        }
+
         alias /srv/releases/;
         autoindex off;
         add_header Access-Control-Allow-Origin "*" always;

@@ -109,7 +109,7 @@ def main():
     # --- what is served ---
     status, _, body = o.request("/")
     check(status == 200 and b"mountain_tile_backend" in body, "the root answers with the service name only", str(status))
-    for path in ("/releases/", "/releases/current/", "/releases/current/capabilities.json", "/pmtiles/", "/__pmtiles/synthetic/x.pmtiles", "/tile-store/", "/.git/config", "/docker-compose.yml"):
+    for path in ("/releases/synthetic-a/analysis/terrain-analysis/0123456789ab.tif", "/releases/x/analysis", "/releases/", "/releases/current/", "/releases/current/capabilities.json", "/pmtiles/", "/__pmtiles/synthetic/x.pmtiles", "/tile-store/", "/.git/config", "/docker-compose.yml"):
         status, _, body = o.request(path)
         check(status in (403, 404) and b"root:" not in body, f"{path} is not served", str(status))
 
