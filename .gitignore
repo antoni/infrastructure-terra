@@ -4,3 +4,4 @@ __pycache__/
 inventory/hosts.local.yml
 *.retry
 .rehearsal/
+.galaxy/

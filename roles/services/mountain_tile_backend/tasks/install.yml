@@ -7,11 +7,16 @@
     group: "{{ mountain_tile_backend_group }}"
     mode: "{{ item.mode }}"
   loop:
-    - { path: "{{ mountain_tile_backend_project_dir }}", mode: "0755" }
-    - { path: "{{ mountain_tile_backend_nginx_dir }}", mode: "0755" }
-    - { path: "{{ mountain_tile_backend_bin_dir }}", mode: "0755" }
-    - { path: "{{ mountain_tile_backend_release_root }}", mode: "0755" }
-    - { path: "{{ mountain_tile_backend_tile_store }}", mode: "0755" }
+    - path: "{{ mountain_tile_backend_project_dir }}"
+      mode: "0755"
+    - path: "{{ mountain_tile_backend_nginx_dir }}"
+      mode: "0755"
+    - path: "{{ mountain_tile_backend_bin_dir }}"
+      mode: "0755"
+    - path: "{{ mountain_tile_backend_release_root }}"
+      mode: "0755"
+    - path: "{{ mountain_tile_backend_tile_store }}"
+      mode: "0755"
 
 - name: Install release validator
   ansible.builtin.copy:

@@ -1,0 +1,11 @@
+---
+exclude_paths:
+  - .galaxy/
+  - .venv/
+  - .github/
+  - .rehearsal/
+  - tests/
+
+# The role's name is services/mountain_tile_backend (path-style, as in the repository layout).
+skip_list:
+  - role-name

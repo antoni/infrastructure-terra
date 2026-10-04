@@ -105,3 +105,58 @@
       - "{{ mountain_tile_backend_smoke_timeout_seconds | string }}"
   changed_when: false
   when: mountain_tile_backend_smoke_tests | bool
+
+- name: Smoke check the public path through the shared reverse proxy
+  when:
+    - mountain_tile_backend_smoke_tests | bool
+    - mountain_tile_backend_manage_vhost | bool
+  block:
+    - name: Health check through the proxy (the Host header selects the vhost)
+      ansible.builtin.uri:
+        url: "{{ 'https' if mountain_tile_backend_public_scheme == 'https' else 'http' }}://127.0.0.1/healthz"
+        headers:
+          Host: "{{ mountain_tile_backend_domain }}"
+        validate_certs: false
+        status_code: 204
+      register: mountain_tile_backend_proxy_health
+      retries: 5
+      delay: 2
+      until: mountain_tile_backend_proxy_health.status == 204
+      changed_when: false
+
+    - name: Plain HTTP is redirected to HTTPS
+      ansible.builtin.uri:
+        url: http://127.0.0.1/healthz
+        headers:
+          Host: "{{ mountain_tile_backend_domain }}"
+        follow_redirects: none
+        status_code: 301
+      register: mountain_tile_backend_http_redirect
+      changed_when: false
+      when: mountain_tile_backend_public_scheme == 'https'
+
+    - name: The redirect keeps the host and goes to HTTPS
+      ansible.builtin.assert:
+        that:
+          - mountain_tile_backend_http_redirect.location == 'https://' ~ mountain_tile_backend_domain ~ '/healthz'
+      when: mountain_tile_backend_public_scheme == 'https'
+
+    - name: Capabilities through the proxy name the active release
+      ansible.builtin.uri:
+        url: "{{ 'https' if mountain_tile_backend_public_scheme == 'https' else 'http' }}://127.0.0.1/api/capabilities"
+        headers:
+          Host: "{{ mountain_tile_backend_domain }}"
+        validate_certs: false
+        return_content: true
+      register: mountain_tile_backend_proxy_capabilities
+      changed_when: false
+
+    - name: The shared proxy's security headers are present
+      ansible.builtin.assert:
+        that:
+          - mountain_tile_backend_proxy_capabilities.x_content_type_options | default('') == 'nosniff'
+          - mountain_tile_backend_public_scheme != 'https' or
+            (mountain_tile_backend_proxy_capabilities.strict_transport_security | default('') | length > 0)
+        fail_msg: >-
+          The response through the reverse proxy lacks X-Content-Type-Options or Strict-Transport-Security, so
+          the vhost does not include the reverse_proxy role's security-headers snippet as intended.

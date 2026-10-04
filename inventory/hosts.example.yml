@@ -6,6 +6,8 @@ all:
         tiles:
           ansible_host: REPLACE_WITH_HOST
           ansible_user: REPLACE_WITH_SSH_USER
+          # The public name of the origin. Its DNS record must point at the host before the first run, so
+          # that Let's Encrypt can issue the certificate.
           mountain_tile_backend_domain: tiles.example.com
-          mountain_tile_backend_manage_vhost: false
-          mountain_tile_backend_cleanup_legacy_vhosts: false
+          # Where Let's Encrypt writes expiry warnings. The playbook refuses an @example.* address.
+          reverse_proxy_email: ops@REPLACE_WITH_YOUR_DOMAIN

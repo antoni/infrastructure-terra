@@ -6,3 +6,29 @@ mountain_tile_backend_env_path: "{{ mountain_tile_backend_project_dir }}/.env"
 mountain_tile_backend_container_nginx_path: "{{ mountain_tile_backend_nginx_dir }}/default.conf"
 mountain_tile_backend_vhost_available_path: "{{ mountain_tile_backend_nginx_sites_available_dir }}/{{ mountain_tile_backend_nginx_vhost_name }}"
 mountain_tile_backend_vhost_enabled_path: "{{ mountain_tile_backend_nginx_sites_enabled_dir }}/{{ mountain_tile_backend_nginx_vhost_name }}"
+
+# TLS files for the vhost come from reverse_proxy's own settings, so the two roles cannot disagree.
+mountain_tile_backend_tls_mode: "{{ reverse_proxy_certificate_mode | default('letsencrypt_nginx') }}"
+mountain_tile_backend_tls_certificate: >-
+  {{
+    reverse_proxy_ssl_certificate | default('') if mountain_tile_backend_tls_mode == 'manual'
+    else ((reverse_proxy_tailscale_cert_dir | default('/etc/nginx/tailscale')) ~ '/server.crt')
+    if mountain_tile_backend_tls_mode == 'tailscale'
+    else '/etc/letsencrypt/live/' ~ mountain_tile_backend_domain ~ '/fullchain.pem'
+  }}
+mountain_tile_backend_tls_certificate_key: >-
+  {{
+    reverse_proxy_ssl_certificate_key | default('') if mountain_tile_backend_tls_mode == 'manual'
+    else ((reverse_proxy_tailscale_cert_dir | default('/etc/nginx/tailscale')) ~ '/server.key')
+    if mountain_tile_backend_tls_mode == 'tailscale'
+    else '/etc/letsencrypt/live/' ~ mountain_tile_backend_domain ~ '/privkey.pem'
+  }}
+
+# The forwarding snippet the vhost includes: the role's own when upstream keep-alive is on, otherwise the
+# shared proxy.conf (see templates/proxy-origin.conf.j2 for why they differ).
+mountain_tile_backend_proxy_snippet: >-
+  {{
+    mountain_tile_backend_nginx_snippets_dir ~ '/mountain_tile_backend_proxy.conf'
+    if (mountain_tile_backend_upstream_keepalive | int > 0)
+    else mountain_tile_backend_nginx_snippets_dir ~ '/proxy.conf'
+  }}

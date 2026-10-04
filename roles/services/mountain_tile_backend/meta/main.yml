@@ -1,10 +1,27 @@
 ---
 galaxy_info:
   role_name: mountain_tile_backend
-  description: Deploy and serve immutable Mountain Map releases through Nginx and PMTiles.
+  namespace: services
+  author: Mountain Map Platform
+  description: >-
+    Serve immutable Mountain Map releases from a container pair (nginx and pmtiles serve) on loopback,
+    behind the shared reverse proxy.
+  license: proprietary
   min_ansible_version: "2.15"
   platforms:
     - name: Debian
+      versions:
+        - bookworm
+        - trixie
     - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+  galaxy_tags:
+    - tiles
+    - nginx
+    - docker
 
+# Docker and the reverse proxy are separate roles (geerlingguy.docker, yourorg.shared_roles.reverse_proxy)
+# that the playbook runs first; this role checks they are there instead of pulling them in.
 dependencies: []

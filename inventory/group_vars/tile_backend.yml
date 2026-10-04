@@ -1,0 +1,31 @@
+---
+# Settings shared by every tile origin host. Site-specific values (host, domain, e-mail) go in the
+# private inventory, inventory/hosts.local.yml.
+
+# --- Docker (geerlingguy.docker) --------------------------------------------------------------------
+# Written to /etc/docker/daemon.json.
+docker_daemon_options:
+  # Logging driver used by containers unless overridden in Compose.
+  #
+  # "local" is Docker's recommended default for standalone hosts. It stores logs in a more efficient
+  # format and rotates them automatically.
+  #
+  # If you're using Promtail to scrape /var/lib/docker/containers/*/*-json.log, use "json-file" instead.
+  log-driver: local
+
+  # Keep local logs bounded to prevent disk exhaustion.
+  #
+  # Each container retains up to: 20 MB x 5 files = ~100 MB. Old logs are removed automatically.
+  log-opts:
+    max-size: "20m"
+    max-file: "5"
+
+# --- Reverse proxy (yourorg.shared_roles.reverse_proxy) ---------------------------------------------
+# The shared nginx terminates TLS for every application on the host. mountain_tile_backend only adds
+# its own vhost and includes the snippets installed here.
+reverse_proxy_certificate_mode: letsencrypt_nginx
+reverse_proxy_manage_certificates: true
+reverse_proxy_certificates:
+  - "{{ mountain_tile_backend_domain }}"
+# reverse_proxy_email has no safe default: set it in the private inventory (the playbook refuses the
+# role's placeholder address).

@@ -1,0 +1,15 @@
+---
+# Roles and collections this repository composes. Install with `make deps`.
+roles:
+  # Docker Engine and the Compose plugin. Generic host setup lives in dedicated roles, never in
+  # mountain_tile_backend.
+  - name: geerlingguy.docker
+    version: 8.0.0
+
+collections:
+  # Shared roles (private repository). Pinned to a commit so a deployment is reproducible; bump the
+  # version deliberately after reviewing what changed there. Installed as yourorg.shared_roles (the
+  # namespace in that repository's galaxy.yml is still the template placeholder).
+  - name: git+ssh://git@github.com/antoni/roles.git
+    type: git
+    version: 10a6c53805d5dd7996d46c8a1c6e626baa198529

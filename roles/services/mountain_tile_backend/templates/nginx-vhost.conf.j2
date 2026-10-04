@@ -1,69 +1,101 @@
-# Managed by Ansible: mountain_tile_backend
+# {{ ansible_managed }}
+# Vhost of mountain_tile_backend on the shared reverse proxy (yourorg.shared_roles.reverse_proxy).
+# TLS policy, security headers, real-IP handling and the rate-limit zones come from that role's snippets;
+# this file only routes to the origin on loopback.
+
+upstream mountain_tile_backend {
+    server {{ mountain_tile_backend_bind_address }}:{{ mountain_tile_backend_host_port }};
+    {% if mountain_tile_backend_upstream_keepalive | int > 0 %}
+    keepalive {{ mountain_tile_backend_upstream_keepalive }};
+{% endif %}
+}
+
 {% if mountain_tile_backend_public_scheme == 'https' %}
 server {
     listen 80;
+{% if mountain_tile_backend_listen_ipv6 | bool %}
+    listen [::]:80;
+{% endif %}
     server_name {{ mountain_tile_backend_domain }};
-    return 301 https://$host$request_uri;
+
+    # Certbot's nginx authenticator answers HTTP-01 challenges from this server block on renewal.
+    location / {
+        return 301 https://$host$request_uri;
+    }
 }
 
 server {
+{% if mountain_tile_backend_nginx_http2_directive | bool %}
+    listen 443 ssl;
+{% if mountain_tile_backend_listen_ipv6 | bool %}
+    listen [::]:443 ssl;
+{% endif %}
+    http2 on;
+{% else %}
     listen 443 ssl http2;
+{% if mountain_tile_backend_listen_ipv6 | bool %}
+    listen [::]:443 ssl http2;
+{% endif %}
+{% endif %}
     server_name {{ mountain_tile_backend_domain }};
 
-{% if mountain_tile_backend_certificate_mode == 'letsencrypt' %}
-    ssl_certificate /etc/letsencrypt/live/{{ mountain_tile_backend_domain }}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/{{ mountain_tile_backend_domain }}/privkey.pem;
-{% elif mountain_tile_backend_certificate_mode == 'tailscale' %}
-    ssl_certificate /var/lib/tailscale/certs/{{ mountain_tile_backend_domain }}.crt;
-    ssl_certificate_key /var/lib/tailscale/certs/{{ mountain_tile_backend_domain }}.key;
-{% elif mountain_tile_backend_certificate_mode == 'manual' %}
-    ssl_certificate {{ mountain_tile_backend_manual_certificate }};
-    ssl_certificate_key {{ mountain_tile_backend_manual_certificate_key }};
-{% endif %}
-
-{% for include_file in mountain_tile_backend_host_nginx_includes %}
-    include {{ include_file }};
-{% endfor %}
-
-{% for cidr in mountain_tile_backend_host_allow_cidrs %}
-    allow {{ cidr }};
-{% endfor %}
-{% if mountain_tile_backend_host_allow_cidrs | length > 0 %}
-    deny all;
-{% endif %}
-
-    location / {
-        proxy_pass http://127.0.0.1:{{ mountain_tile_backend_host_port }};
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto https;
-    }
-}
+    ssl_certificate     {{ mountain_tile_backend_tls_certificate }};
+    ssl_certificate_key {{ mountain_tile_backend_tls_certificate_key }};
 {% else %}
 server {
     listen 80;
+{% if mountain_tile_backend_listen_ipv6 | bool %}
+    listen [::]:80;
+{% endif %}
     server_name {{ mountain_tile_backend_domain }};
+{% endif %}
 
-{% for include_file in mountain_tile_backend_host_nginx_includes %}
-    include {{ include_file }};
-{% endfor %}
-
-{% for cidr in mountain_tile_backend_host_allow_cidrs %}
+{% if mountain_tile_backend_public_scheme == 'https' %}
+    include {{ mountain_tile_backend_nginx_snippets_dir }}/ssl.conf;
+{% endif %}
+    include {{ mountain_tile_backend_nginx_snippets_dir }}/security-headers.conf;
+{% if mountain_tile_backend_geoblocking_enforce | bool %}
+    include {{ mountain_tile_backend_nginx_snippets_dir }}/geoblocking-enforce.conf;
+{% endif %}
+{% for cidr in mountain_tile_backend_allow_cidrs %}
     allow {{ cidr }};
 {% endfor %}
-{% if mountain_tile_backend_host_allow_cidrs | length > 0 %}
+{% if mountain_tile_backend_allow_cidrs | length > 0 %}
     deny all;
 {% endif %}
 
+{% if mountain_tile_backend_rate_limit_enabled | bool %}
+    limit_req  zone=perip burst={{ mountain_tile_backend_rate_limit_burst }} nodelay;
+    limit_conn addr {{ mountain_tile_backend_rate_limit_connections }};
+
+{% endif %}
+    # Liveness for monitoring: no rate limit, no logging noise.
+    location = /healthz {
+        access_log off;
+        include {{ mountain_tile_backend_proxy_snippet }};
+        proxy_pass http://mountain_tile_backend;
+    }
+
+    # Whole release archives (hundreds of MB to GB) and byte-range reads of them: stream, never buffer
+    # to disk, and let the client's Range header through.
+    location ^~ /pmtiles/ {
+        include {{ mountain_tile_backend_proxy_snippet }};
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_pass http://mountain_tile_backend;
+    }
+
+    location ^~ /releases/ {
+        include {{ mountain_tile_backend_proxy_snippet }};
+        proxy_buffering off;
+        proxy_request_buffering off;
+        proxy_pass http://mountain_tile_backend;
+    }
+
+    # Everything else: tiles, TileJSON, styles, capabilities. Small responses; the container sets the
+    # caching headers (immutable for versioned URLs).
     location / {
-        proxy_pass http://127.0.0.1:{{ mountain_tile_backend_host_port }};
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto http;
+        include {{ mountain_tile_backend_proxy_snippet }};
+        proxy_pass http://mountain_tile_backend;
     }
 }
-{% endif %}

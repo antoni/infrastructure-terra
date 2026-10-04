@@ -7,7 +7,10 @@
       - mountain_tile_backend_project_dir[0] == '/'
       - mountain_tile_backend_release_root[0] == '/'
       - mountain_tile_backend_tile_store[0] == '/'
-      - mountain_tile_backend_domain is match('^[A-Za-z0-9.-]+$')
+      - mountain_tile_backend_domain | length > 0
+      - >-
+        mountain_tile_backend_domain == 'localhost' or
+        mountain_tile_backend_domain is match('^([A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?\\.)+[A-Za-z]{2,}$')
       - mountain_tile_backend_public_scheme in ['http', 'https']
       - mountain_tile_backend_host_port | int > 0
       - mountain_tile_backend_host_port | int < 65536
@@ -19,7 +22,9 @@
       - mountain_tile_backend_activate_release == '' or
         (mountain_tile_backend_activate_release is match('^[A-Za-z0-9._-]+$'))
       - mountain_tile_backend_activate_release not in ['.', '..', 'current']
-    fail_msg: Invalid mountain_tile_backend role configuration.
+    fail_msg: >-
+      Invalid mountain_tile_backend role configuration. mountain_tile_backend_domain is required and must
+      be a fully qualified hostname (or localhost for a local rehearsal).
 
 - name: Check Docker CLI
   ansible.builtin.command:
@@ -72,49 +77,47 @@
       Refusing to replace it because release activation must be atomic.
 
 
-- name: Resolve managed TLS certificate paths
-  ansible.builtin.set_fact:
-    mountain_tile_backend_effective_certificate: >-
-      {{
-        '/etc/letsencrypt/live/' ~ mountain_tile_backend_domain ~ '/fullchain.pem'
-        if mountain_tile_backend_certificate_mode == 'letsencrypt'
-        else (
-          '/var/lib/tailscale/certs/' ~ mountain_tile_backend_domain ~ '.crt'
-          if mountain_tile_backend_certificate_mode == 'tailscale'
-          else mountain_tile_backend_manual_certificate
-        )
-      }}
-    mountain_tile_backend_effective_certificate_key: >-
-      {{
-        '/etc/letsencrypt/live/' ~ mountain_tile_backend_domain ~ '/privkey.pem'
-        if mountain_tile_backend_certificate_mode == 'letsencrypt'
-        else (
-          '/var/lib/tailscale/certs/' ~ mountain_tile_backend_domain ~ '.key'
-          if mountain_tile_backend_certificate_mode == 'tailscale'
-          else mountain_tile_backend_manual_certificate_key
-        )
-      }}
+- name: Validate the TLS mode inherited from reverse_proxy
+  ansible.builtin.assert:
+    that:
+      - mountain_tile_backend_tls_mode in ['letsencrypt_nginx', 'tailscale', 'manual']
+      - mountain_tile_backend_tls_certificate | length > 0
+      - mountain_tile_backend_tls_certificate_key | length > 0
+    fail_msg: >-
+      The TLS certificate paths could not be derived from reverse_proxy_certificate_mode
+      ({{ mountain_tile_backend_tls_mode }}). In manual mode set reverse_proxy_ssl_certificate and
+      reverse_proxy_ssl_certificate_key.
   when:
     - mountain_tile_backend_manage_vhost | bool
     - mountain_tile_backend_public_scheme == 'https'
 
-- name: Validate managed certificate mode
+- name: Check the shared reverse proxy is installed
+  ansible.builtin.stat:
+    path: "{{ mountain_tile_backend_nginx_snippets_dir }}/{{ item }}"
+  loop: "{{ ['ssl.conf', 'security-headers.conf', 'proxy.conf'] + (['geoblocking-enforce.conf'] if mountain_tile_backend_geoblocking_enforce | bool else []) }}"
+  register: mountain_tile_backend_proxy_snippets
+  when: mountain_tile_backend_manage_vhost | bool
+
+- name: Require the shared reverse proxy's snippets
   ansible.builtin.assert:
     that:
-      - mountain_tile_backend_certificate_mode in ['letsencrypt', 'tailscale', 'manual']
-      - mountain_tile_backend_effective_certificate | length > 0
-      - mountain_tile_backend_effective_certificate_key | length > 0
-    fail_msg: Invalid managed TLS certificate configuration.
-  when:
-    - mountain_tile_backend_manage_vhost | bool
-    - mountain_tile_backend_public_scheme == 'https'
+      - item.stat.exists | default(false)
+    fail_msg: >-
+      {{ item.item }} is missing from {{ mountain_tile_backend_nginx_snippets_dir }}. The vhost this role
+      writes includes the snippets of the reverse_proxy role (yourorg.shared_roles); run that role on the
+      host first (playbooks/tile_backend_host.yml does), or set mountain_tile_backend_manage_vhost: false
+      for a host whose proxy is configured some other way.
+  loop: "{{ mountain_tile_backend_proxy_snippets.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: mountain_tile_backend_manage_vhost | bool
 
 - name: Check managed TLS certificate files
   ansible.builtin.stat:
     path: "{{ item }}"
   loop:
-    - "{{ mountain_tile_backend_effective_certificate }}"
-    - "{{ mountain_tile_backend_effective_certificate_key }}"
+    - "{{ mountain_tile_backend_tls_certificate }}"
+    - "{{ mountain_tile_backend_tls_certificate_key }}"
   register: mountain_tile_backend_certificate_stats
   when:
     - mountain_tile_backend_manage_vhost | bool
@@ -125,7 +128,10 @@
     that:
       - item.stat.exists | default(false)
       - item.stat.isreg | default(false)
-    fail_msg: "Managed TLS certificate file is missing: {{ item.item }}"
+    fail_msg: >-
+      The TLS file {{ item.item }} does not exist, so nginx would refuse the vhost. This role does not
+      issue certificates: list {{ mountain_tile_backend_domain }} in reverse_proxy_certificates (mode
+      letsencrypt_nginx) and run the reverse_proxy role before this one.
   loop: "{{ mountain_tile_backend_certificate_stats.results | default([]) }}"
   loop_control:
     label: "{{ item.item }}"

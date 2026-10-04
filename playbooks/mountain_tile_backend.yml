@@ -1,4 +1,7 @@
 ---
+# Only the tile backend role, for a host that already has Docker and the shared reverse proxy (or for
+# the local rehearsals, which set mountain_tile_backend_manage_vhost: false). A new host needs
+# playbooks/tile_backend_host.yml instead.
 - name: Deploy Mountain Map tile origin
   hosts: tile_backend
   become: true

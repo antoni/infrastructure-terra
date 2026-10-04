@@ -1,0 +1,32 @@
+---
+# A complete tile origin host: Docker, the shared reverse proxy, and the tile backend behind it.
+# Generic host setup comes from dedicated roles; mountain_tile_backend only does its own job.
+#
+#   make deps
+#   .venv/bin/ansible-playbook -i inventory/hosts.local.yml playbooks/tile_backend_host.yml \
+#     -e mountain_tile_backend_activate_release=<release id>
+#
+# Tags: docker, proxy, app (run one layer at a time, for example after a release was copied).
+- name: Tile origin host
+  hosts: tile_backend
+  become: true
+  pre_tasks:
+    - name: Refuse the proxy role's placeholder e-mail address when it manages certificates
+      ansible.builtin.assert:
+        that:
+          - reverse_proxy_email is defined
+          - reverse_proxy_email is not match('.*@example\.(com|org|net)$')
+        fail_msg: >-
+          Set reverse_proxy_email to a real address in the private inventory; Let's Encrypt sends
+          expiry warnings there.
+      when:
+        - reverse_proxy_manage_certificates | default(false) | bool
+        - reverse_proxy_certificate_mode | default('letsencrypt_nginx') == 'letsencrypt_nginx'
+      tags: [always]
+  roles:
+    - role: geerlingguy.docker
+      tags: [docker]
+    - role: yourorg.shared_roles.reverse_proxy
+      tags: [proxy]
+    - role: services/mountain_tile_backend
+      tags: [app]
