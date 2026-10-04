@@ -20,6 +20,11 @@ docker_daemon_options:
     max-size: "20m"
     max-file: "5"
 
+  # Publish container ports with iptables NAT instead of one docker-proxy process per port. The origin is
+  # published on 127.0.0.1 only; with the userland proxy every request from the host nginx went through that
+  # extra process (and a new TCP connection to it).
+  userland-proxy: false
+
 # --- Reverse proxy (yourorg.shared_roles.reverse_proxy) ---------------------------------------------
 # The shared nginx terminates TLS for every application on the host. mountain_tile_backend only adds
 # its own vhost and includes the snippets installed here.
