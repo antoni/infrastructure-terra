@@ -7,22 +7,34 @@ this repository deploys and serves them with Nginx and `pmtiles serve`.
 
 ## Controller and target
 
-Run `make setup` with Python 3.12 on the controller. The target needs Python 3.9+
-and working Docker Engine with Docker Compose v2. The SSH user needs become/sudo
-access; the role does not install Docker or issue TLS certificates.
+Run `make setup` with Python 3.12 on the controller, then `make deps` for the roles this repository composes (`requirements.yml`):
 
-The checked-in `inventory/hosts.yml` has an empty `tile_backend` group, so it
-selects no target. Create your private inventory from the example:
+- `geerlingguy.docker` (Docker Engine, Compose plugin, `daemon.json`);
+- `yourorg.shared_roles` from the private `antoni/roles` repository, pinned to a commit; `reverse_proxy` there provides nginx, TLS, certificates and security headers. `make deps` clones it over SSH, so it needs your key. (The collection's namespace is still the template placeholder `yourorg` in its `galaxy.yml`.)
+
+The target needs only Python 3.9+ and SSH access with sudo; everything else is installed by those roles. The checked-in `inventory/hosts.yml` has an empty `tile_backend` group, so it selects no target. Create your private inventory from the example:
 
 ```sh
 cp inventory/hosts.example.yml inventory/hosts.local.yml
-# Fill in host/IP, SSH user, domain and reverse-proxy settings.
+# Fill in host/IP, SSH user, domain and the Let's Encrypt contact address.
 .venv/bin/ansible-inventory -i inventory/hosts.local.yml --graph
 .venv/bin/ansible tile_backend -i inventory/hosts.local.yml -m ping
 ```
 
-`hosts.local.yml` is ignored by Git. Keep secrets in Ansible Vault or your SSH
-agent, rather than a committed inventory. Host-key checking remains enabled.
+`hosts.local.yml` is ignored by Git. Keep secrets in Ansible Vault or your SSH agent, rather than a committed inventory (for password-based SSH on a test host, read it from the environment: `ansible_password: "{{ lookup('env', 'VPS_PASSWORD') }}"`). Host-key checking remains enabled. Settings shared by all hosts (the Docker daemon options, the proxy's certificate mode) are in `inventory/group_vars/tile_backend.yml`.
+
+A complete host, from a fresh Debian or Ubuntu install:
+
+```sh
+.venv/bin/ansible-playbook -i inventory/hosts.local.yml playbooks/tile_backend_host.yml \
+  -e mountain_tile_backend_activate_release=<release id>
+```
+
+Make a release available on the host first (below). The first run installs Docker and the proxy, obtains the certificate and starts the origin; later runs change nothing unless something changed.
+
+## Checks
+
+`make check test lint rehearse` is what CI would run (CI runs `setup check test` and the rehearsal; it cannot fetch the private roles, so the host playbook's syntax check is skipped there). `make lint` is `yamllint` and `ansible-lint` at the `production` profile and needs `make deps`. To test a real host, `tests/remote_rehearsal.py` and `tests/remote_security.py` (see their docstrings).
 
 ## Private deployment rehearsal
 
@@ -98,5 +110,5 @@ Rollback uses the same playbook with the previous release ID. Clearing the
 activation variable preserves the existing `current` symlink.
 
 See [role settings and architecture](roles/services/mountain_tile_backend/README.md).
-Remote SSH, TLS, certificates and Cloudflare remain to be checked on the real host;
-the local rehearsal does not claim to validate them.
+The remote lifecycle and security probes have been run against a throwaway Debian 13 host with a self-signed
+certificate. Let's Encrypt issuance, a real domain and Cloudflare remain to be checked.

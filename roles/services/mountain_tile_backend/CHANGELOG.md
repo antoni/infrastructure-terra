@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+- sit behind the shared `reverse_proxy` role (yourorg.shared_roles) instead of managing nginx policy:
+  the vhost includes its snippets and takes its certificate paths from its variables; Docker comes from
+  `geerlingguy.docker`; `playbooks/tile_backend_host.yml` runs the three in order;
+- vhost: upstream keep-alive through a snippet of the role's own (the shared `proxy.conf` forces
+  `Connection: close`), unbuffered streaming of `/pmtiles/` and `/releases/`, IPv6 listeners when the host
+  has IPv6, and removal of the vhost again if `nginx -t` rejects it;
+- the domain is now required (the old default was a real hostname); the proxy role's placeholder e-mail
+  is refused when it manages certificates;
+- containers: memory and process limits, `init`, log rotation, `pmtiles serve` runs as `nobody`;
+- smoke tests also run through the shared proxy (redirect, HSTS and nosniff present);
+- read-only checks run in check mode, so `--check` works;
+- opt-in retention (`mountain_tile_backend_keep_releases`) with a tested prune tool;
+- removed: own certificate modes (letsencrypt/tailscale/manual), legacy vhost cleanup, site-directory
+  management, `host_nginx_includes`; `manage_vhost` now defaults to true;
+- `ansible-lint` (production profile) and `yamllint` configuration and a `make lint` target.
+
 - add the repository playbook, empty default inventory, private inventory example,
   controller setup and CI;
 - match terrain-platform's `/tiles/<dataset>/<sha12>/...` URLs and nested archives;

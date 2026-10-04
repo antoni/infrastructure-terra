@@ -34,6 +34,7 @@
       - "{{ mountain_tile_backend_current_path }}"
   register: mountain_tile_backend_current_readlink
   changed_when: false
+  check_mode: false
   failed_when: false
 
 - name: Resolve release to validate and serve
@@ -72,6 +73,7 @@
       - --require-publishable
       - "{{ mountain_tile_backend_require_publishable | bool | ternary('true', 'false') }}"
   changed_when: false
+  check_mode: false
   when: mountain_tile_backend_validate_release | bool
 
 - name: Check PMTiles image
@@ -195,7 +197,10 @@
 
     - name: Reload host nginx when the vhost changed
       ansible.builtin.debug:
-        msg: The vhost changed; the shared nginx is reloaded after the containers are up.
+        msg: >-
+          {{ 'The vhost changed; the shared nginx is reloaded after the containers are up.'
+          if (mountain_tile_backend_vhost_rendered.changed or mountain_tile_backend_vhost_linked.changed)
+          else 'The vhost is unchanged.' }}
       changed_when: mountain_tile_backend_vhost_rendered.changed or mountain_tile_backend_vhost_linked.changed
       notify: Reload host nginx
   rescue:

@@ -7,23 +7,51 @@ The role does **not** build terrain, generate styles, generate TileJSON, generat
 ## Architecture
 
 ```text
-Cloudflare / host reverse proxy
+client -> Cloudflare (later)
             |
             v
-      127.0.0.1:8090
+   shared reverse proxy on the host        <- yourorg.shared_roles.reverse_proxy: TLS, certificates,
+   (nginx, :80/:443)                          security headers, real IP, rate-limit zones
+            |  this role's vhost: <domain>.conf
+            v
+      127.0.0.1:8090  (loopback only, upstream keep-alive)
             |
-       container Nginx
+       container nginx
         /          \
  static release   /tiles/*
       |              |
       v              v
- releases/*      pmtiles serve
+ releases/*      pmtiles serve (read-only, runs as nobody)
                     |
                     v
        tile-store/<dataset>/<hash>.pmtiles
 ```
 
 Nginx mounts the entire release root. PMTiles mounts a shared content-addressed tile store populated before activation. Retained release assets and previously deployed tile versions remain available after `current` moves.
+
+## What belongs where
+
+| Concern | Owner |
+| --- | --- |
+| Docker Engine, Compose plugin, `daemon.json` (log rotation) | `geerlingguy.docker`, settings in `inventory/group_vars/tile_backend.yml` |
+| nginx, TLS policy, certificates (Let's Encrypt, Tailscale or manual), security headers, HSTS, real client IP, rate-limit zones, GeoIP | `yourorg.shared_roles.reverse_proxy` |
+| The vhost for this domain, the two containers, release validation and activation, tile store, retention, smoke tests | this role |
+
+The role does not install Docker, nginx or certbot, does not issue certificates and does not change any shared setting. It checks that what it needs is there (Docker, Compose, the proxy's `ssl.conf`, `security-headers.conf` and `proxy.conf` snippets, the certificate files) and fails with a message naming the role to run first.
+
+## Playbooks
+
+```sh
+make deps                        # geerlingguy.docker and the shared roles, pinned in requirements.yml
+# a new host: Docker, the shared proxy, then this role
+.venv/bin/ansible-playbook -i inventory/hosts.local.yml playbooks/tile_backend_host.yml \
+  -e mountain_tile_backend_activate_release=<release id>
+# a host that already has both: only this role (tags: docker, proxy, app select a layer of the host playbook)
+.venv/bin/ansible-playbook -i inventory/hosts.local.yml playbooks/mountain_tile_backend.yml \
+  -e mountain_tile_backend_activate_release=<release id>
+```
+
+Required per host (private inventory): `mountain_tile_backend_domain`, and for Let's Encrypt `reverse_proxy_email`. DNS for the domain must point at the host before the first run.
 
 ## Release contract
 
@@ -104,7 +132,7 @@ The role does not hardcode dataset names. `<sha12>` is the first 12 hex characte
 
 For MVT archives, native PMTiles serving uses `.mvt`. Nginx also accepts a public `.pbf` URL and translates it to `.mvt` internally for compatibility.
 
-This matches terrain-platform’s existing URL contract. Build release assets with `--public-base https://<domain>/releases/<release>` (or the root-relative equivalent). Local-development `/release/...` URLs are rejected. The indexer verifies content hashes and retains archives with hard links, falling back to copying across filesystems. Archive pruning is deferred until a retention policy exists.
+This matches terrain-platform’s existing URL contract. Build release assets with `--public-base https://<domain>/releases/<release>` (or the root-relative equivalent). Local-development `/release/...` URLs are rejected. The indexer verifies content hashes and retains archives with hard links, falling back to copying across filesystems. Old releases and archives are kept until you opt in to [retention](#retention).
 
 ## Activation
 
@@ -138,16 +166,11 @@ The tile smoke checker reads the PMTiles v3 header and probes the declared cente
 
 ## `.env`
 
-The role writes a mode `0600` `.env` for Compose runtime configuration:
+The role writes a mode `0600` `.env` for Compose runtime configuration: project name, bind address and loopback port, the two images, the PMTiles cache size, the memory and process limits, the log rotation settings and the public base URL. There are no secrets in it today; it is the intended place for later runtime credentials.
 
-- Compose project name;
-- loopback host port;
-- Nginx image;
-- PMTiles image;
-- PMTiles header/directory cache size;
-- public base URL.
+## Container hardening
 
-There are no premium/R2 secrets in the MVP. The file provides the intended place for later runtime credentials/configuration without embedding them in Compose templates.
+Both containers run with a read-only root filesystem, `no-new-privileges`, all capabilities dropped (nginx keeps only the four it needs to start), `init: true`, memory and process limits, `restart: unless-stopped` and size-bounded `local` log rotation. `pmtiles serve` runs as `nobody` and sees the tile store read-only. The published port is bound to `127.0.0.1`, so the only way in is the shared proxy. Pin images by digest (`nginx:1.27-alpine@sha256:...`) in the inventory when a deployment must be reproducible.
 
 ## Cloudflare caching
 
@@ -159,17 +182,23 @@ The origin sends:
 
 Configure Cloudflare Cache Rules so the versioned tile/release namespaces are cache-eligible. Do not apply immutable caching to a URL whose bytes can change.
 
-## Host reverse proxy
+## The vhost on the shared reverse proxy
 
-By default:
+`mountain_tile_backend_manage_vhost: true` (the default) writes `/etc/nginx/sites-available/<domain>.conf`, enables it, runs `nginx -t` and, if nginx rejects it, takes the vhost out again before anything can restart the shared proxy. The reload happens after the containers are up. The file contains:
 
-```yaml
-mountain_tile_backend_manage_vhost: false
-```
+- port 80: a redirect to HTTPS (certbot answers HTTP-01 challenges from this block on renewal);
+- port 443: the certificate named by the proxy role's own variables, then `ssl.conf` and `security-headers.conf` (HSTS, nosniff, referrer and frame policy) from the shared role, optionally `geoblocking-enforce.conf`;
+- an `upstream` with keep-alive to the loopback origin, and four locations: `/healthz` (unlogged), `/pmtiles/` and `/releases/` (streamed, never buffered to disk, `Range` passes through) and everything else.
 
-The container only binds to `127.0.0.1:8090`. The existing host reverse-proxy layer can continue to own TLS, HSTS, rate limits, GeoIP, Cloudflare real-IP handling, and other shared policy.
+**Forwarding snippet.** The shared `proxy.conf` sends `Connection: $connection_upgrade`, which is `close` for ordinary requests, so nginx closes the upstream connection after every request and the `keepalive` of the upstream block never applies (an empty `proxy_set_header Connection ""` in the same location cannot override it; both are sent). Measured on the test host this opened about 1,000 loopback connections per second, each leaving a TIME_WAIT socket for 60 seconds; at roughly 450 cache misses per second a host runs out of ephemeral ports and requests fail. The role therefore installs `mountain_tile_backend_proxy.conf` (same forwarding headers, no WebSocket line; a tile origin has no WebSockets). `mountain_tile_backend_upstream_keepalive: 0` uses the shared `proxy.conf` unchanged. If the shared role's map used `''` instead of `close` for non-upgrade requests, this snippet would no longer be needed.
 
-Optional vhost management is retained for hosts that want this role to create the public proxy.
+**Does the extra hop make it slower?** Not measurably. A loopback hop costs microseconds against tile latencies of tens of milliseconds, and behind Cloudflare most requests never reach the origin (versioned URLs are immutable for a year). On the 2-vCPU test VPS, runs of the same configuration varied by 3x (a single direct connection: 0.6 ms, then 2.1 ms, then 2.3 ms), more than any proxy effect, so no number is claimed. What did matter was the connection reuse above.
+
+**Rate limiting is off by default** (`mountain_tile_backend_rate_limit_enabled`). A map view requests dozens of tiles at once, and behind a CDN all clients share the CDN's few addresses unless the proxy restores the real client IP (`reverse_proxy_real_ip_enabled` with the CDN's ranges as trusted proxies). With the shared role's `perip` zone at 10 requests per second a single Cloudflare address would throttle the world. Enable it, with a high burst, only after real-IP handling is configured.
+
+## Retention
+
+`mountain_tile_backend_keep_releases: N` (default `0`: keep everything) runs, after a deployment whose smoke tests passed, `prune_releases.py`: it keeps the active release and the `N` most recent others (by when they were copied to the host), removes the rest, and removes tile-store archives that no kept release lists. Tile URLs carry the archive's hash, so older apps keep requesting old archives; choose `N` so the oldest app version in use is covered. In check mode it only reports what it would remove.
 
 ## Deferred by design
 
@@ -189,4 +218,14 @@ A first deployment therefore requires a real `terrain-platform` release on disk 
 
 ## Validation and repository entry points
 
-See the [repository README](../../../README.md) for inventory setup, playbook commands, synthetic release generation and the local Docker rehearsal. The role’s loopback serving, activation and rollback have local integration coverage. Remote SSH, TLS, certificates and Cloudflare must still be tested on the actual deployment host. Legacy vhost cleanup is disabled by default.
+See the [repository README](../../../README.md) for inventory setup and commands.
+
+- `make check test lint rehearse`: syntax, unit tests (release contract, retention), `ansible-lint` at the `production` profile, and a local Docker rehearsal of deployment, a repeat run with zero changes, rejection of an invalid release, a release switch with old tile URLs retained, and rollback.
+- `tests/remote_rehearsal.py`: the same lifecycle plus check mode and retention against a real host over an SSH tunnel.
+- `tests/remote_security.py`: probes the public path (redirect, TLS versions, headers, path traversal, methods, tile edge cases). Remaining `GAP` lines are host-level: a catch-all `default_server` and rate limiting.
+
+## Production checklist
+
+Covered by this role: idempotent runs (zero changes on repeat), check mode, hardened containers with limits and log rotation, restart on boot, health checks and smoke tests through both the loopback origin and the shared proxy, atomic activation and rollback, a vhost that cannot leave the shared proxy unable to restart, opt-in retention.
+
+Not covered here, because they are generic host concerns that belong to dedicated roles: a firewall, SSH hardening, automatic security updates, intrusion banning (fail2ban/CrowdSec), time synchronisation, monitoring and alerting, and backups (the host holds only releases that `terrain-platform` can rebuild). Cloudflare Cache Rules and real-IP ranges are configured at the CDN and through `reverse_proxy_real_ip_*`.

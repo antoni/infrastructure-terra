@@ -41,3 +41,11 @@
     owner: "{{ mountain_tile_backend_owner }}"
     group: "{{ mountain_tile_backend_group }}"
     mode: "0755"
+
+- name: Install release retention tool
+  ansible.builtin.copy:
+    src: prune_releases.py
+    dest: "{{ mountain_tile_backend_bin_dir }}/prune_releases.py"
+    owner: "{{ mountain_tile_backend_owner }}"
+    group: "{{ mountain_tile_backend_group }}"
+    mode: "0755"

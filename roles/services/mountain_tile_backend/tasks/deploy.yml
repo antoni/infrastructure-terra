@@ -21,6 +21,7 @@
         method: GET
         status_code: 204
         return_content: false
+      check_mode: false
       register: mountain_tile_backend_health_result
       retries: "{{ mountain_tile_backend_health_retries }}"
       delay: "{{ mountain_tile_backend_health_delay }}"
@@ -56,6 +57,7 @@
     method: GET
     status_code: 200
     return_content: true
+  check_mode: false
   register: mountain_tile_backend_capabilities_smoke
   changed_when: false
   when: mountain_tile_backend_smoke_tests | bool
@@ -86,6 +88,7 @@
   loop: "{{ mountain_tile_backend_tilejson_files.files | default([]) }}"
   loop_control:
     label: "{{ item.path | basename }}"
+  check_mode: false
   register: mountain_tile_backend_tilejson_smoke
   changed_when: false
   when: mountain_tile_backend_smoke_tests | bool
@@ -104,6 +107,7 @@
       - --timeout
       - "{{ mountain_tile_backend_smoke_timeout_seconds | string }}"
   changed_when: false
+  check_mode: false
   when: mountain_tile_backend_smoke_tests | bool
 
 - name: Smoke check the public path through the shared reverse proxy
@@ -118,6 +122,7 @@
           Host: "{{ mountain_tile_backend_domain }}"
         validate_certs: false
         status_code: 204
+      check_mode: false
       register: mountain_tile_backend_proxy_health
       retries: 5
       delay: 2
@@ -131,6 +136,7 @@
           Host: "{{ mountain_tile_backend_domain }}"
         follow_redirects: none
         status_code: 301
+      check_mode: false
       register: mountain_tile_backend_http_redirect
       changed_when: false
       when: mountain_tile_backend_public_scheme == 'https'
@@ -148,6 +154,7 @@
           Host: "{{ mountain_tile_backend_domain }}"
         validate_certs: false
         return_content: true
+      check_mode: false
       register: mountain_tile_backend_proxy_capabilities
       changed_when: false
 
@@ -160,3 +167,20 @@
         fail_msg: >-
           The response through the reverse proxy lacks X-Content-Type-Options or Strict-Transport-Security, so
           the vhost does not include the reverse_proxy role's security-headers snippet as intended.
+
+# Last, and only because everything above passed: a failed deployment must never also delete the releases
+# that could be rolled back to.
+- name: Prune releases and archives beyond the retention policy
+  ansible.builtin.command:
+    argv: >-
+      {{
+        ['python3', mountain_tile_backend_bin_dir ~ '/prune_releases.py',
+         '--release-root', mountain_tile_backend_release_root,
+         '--tile-store', mountain_tile_backend_tile_store,
+         '--keep', mountain_tile_backend_keep_releases | string]
+        + (['--dry-run'] if ansible_check_mode else [])
+      }}
+  register: mountain_tile_backend_prune
+  changed_when: "'nothing to prune' not in mountain_tile_backend_prune.stdout and not ansible_check_mode"
+  check_mode: false
+  when: mountain_tile_backend_keep_releases | int > 0

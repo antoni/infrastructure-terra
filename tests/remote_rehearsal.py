@@ -24,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import time
+from urllib.error import HTTPError
 from urllib.request import urlopen
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -67,10 +68,10 @@ def main():
         time.sleep(3)
         base = f"http://127.0.0.1:{port}"
 
-        def deploy(release, expect_unchanged=False, must_fail=False):
+        def deploy(release, expect_unchanged=False, must_fail=False, extra=()):
             out = subprocess.run(
                 [playbook, "-i", str(args.inventory), *PLAYBOOK, "-e", f"mountain_tile_backend_activate_release={release}",
-                 "-e", "mountain_tile_backend_require_publishable=false"],
+                 "-e", "mountain_tile_backend_require_publishable=false", *extra],
                 cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
             if must_fail:
                 assert out.returncode != 0, f"{release} was accepted"
@@ -109,6 +110,26 @@ def main():
         deploy("synthetic-a")
         check("synthetic-a", [a, b])
         print("PASS: rolled back to synthetic-a; both tile versions are still served")
+
+        # Retention: release order is the directory's modification time. Make it explicit on the host.
+        for name, day in (("synthetic-a", "01"), ("synthetic-b", "02"), ("synthetic-bad", "03")):
+            run(*prefix, "ssh", args.host, f"touch -d 2026-01-{day} {args.release_root}/{name}")
+        dry = subprocess.run([playbook, "-i", str(args.inventory), *PLAYBOOK, "--check", "-e", "mountain_tile_backend_activate_release=synthetic-a",
+                              "-e", "mountain_tile_backend_require_publishable=false", "-e", "mountain_tile_backend_keep_releases=1"],
+                             cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)  # fmt: skip
+        assert dry.returncode == 0, dry.stdout
+        check(a_release := "synthetic-a", [a, b])
+        print("PASS: a check-mode run with retention on changes nothing")
+        deploy("synthetic-a", extra=("-e", "mountain_tile_backend_keep_releases=1"))
+        listing = run(*prefix, "ssh", args.host, f"ls {args.release_root}").split()
+        assert "synthetic-b" not in listing and "synthetic-a" in listing and "synthetic-bad" in listing, listing
+        check(a_release, [a])
+        try:
+            urlopen(base + b)
+            raise AssertionError("the pruned release's archive is still served")
+        except HTTPError as error:
+            assert error.code == 404, error.code
+        print("PASS: retention kept the active release and the newest other, removed synthetic-b and its archive")
     finally:
         if tunnel:
             tunnel.terminate()

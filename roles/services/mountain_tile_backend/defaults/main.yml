@@ -54,6 +54,13 @@ mountain_tile_backend_smoke_timeout_seconds: 10
 mountain_tile_backend_current_cache_seconds: 300
 mountain_tile_backend_immutable_cache_seconds: 31536000
 
+# --- Retention --------------------------------------------------------------------------------------
+# 0 keeps every release and archive for ever (disk fills up). N > 0 keeps the active release and the N most
+# recent others after a verified deployment, and deletes tile-store archives no kept release lists. Tile URLs
+# carry the archive hash and older apps keep requesting them, so only turn this on once the oldest app version
+# in use is covered by those N releases.
+mountain_tile_backend_keep_releases: 0
+
 # --- The vhost on the shared reverse proxy ----------------------------------------------------------
 # The reverse_proxy role (yourorg.shared_roles) owns nginx, TLS policy, certificates, security headers,
 # real-IP handling and the rate-limit zones. This role only writes its own vhost, includes those
