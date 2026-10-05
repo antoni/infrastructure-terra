@@ -6,4 +6,4 @@
   hosts: tile_backend
   become: true
   roles:
-    - role: services/mountain_tile_backend
+    - role: yourorg.shared_roles.mountain_tile_backend

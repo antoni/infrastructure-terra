@@ -4,8 +4,5 @@ exclude_paths:
   - .venv/
   - .github/
   - .rehearsal/
+  - .ansible/
   - tests/
-
-# The role's name is services/mountain_tile_backend (path-style, as in the repository layout).
-skip_list:
-  - role-name

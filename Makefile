@@ -11,19 +11,23 @@ deps:
 	.venv/bin/ansible-galaxy role install -r requirements.yml -p .galaxy/roles --force
 	.venv/bin/ansible-galaxy collection install -r requirements.yml -p .galaxy/collections --force
 
-check:
+# mountain_tile_backend comes from the shared roles (make deps), so everything below needs them.
+SHARED_ROLES := .galaxy/collections/ansible_collections/yourorg/shared_roles
+
+$(SHARED_ROLES):
+	@echo "the shared roles are missing: run 'make deps' (needs access to antoni/roles)"; exit 1
+
+check: $(SHARED_ROLES)
 	.venv/bin/ansible-playbook --syntax-check playbooks/mountain_tile_backend.yml
-	@if [ -d .galaxy/collections/ansible_collections ]; then \
-		.venv/bin/ansible-playbook --syntax-check playbooks/tile_backend_host.yml; \
-	else echo "skipping playbooks/tile_backend_host.yml: run 'make deps' for the shared roles"; fi
+	.venv/bin/ansible-playbook --syntax-check playbooks/tile_backend_host.yml
 	git diff --check
 
 lint:
 	.venv/bin/yamllint .
-	.venv/bin/ansible-lint
+	.venv/bin/ansible-lint --offline
 
-test:
+test: $(SHARED_ROLES)
 	.venv/bin/python -m unittest discover -s tests -v
 
-rehearse:
+rehearse: $(SHARED_ROLES)
 	.venv/bin/python -u tests/rehearsal.py

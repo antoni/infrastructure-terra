@@ -5,3 +5,4 @@ inventory/hosts.local.yml
 *.retry
 .rehearsal/
 .galaxy/
+.ansible/

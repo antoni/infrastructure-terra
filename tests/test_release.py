@@ -6,7 +6,7 @@ import sys
 import tempfile
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "roles/services/mountain_tile_backend/files"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".galaxy/collections/ansible_collections/yourorg/shared_roles/roles/mountain_tile_backend/files"))
 from sync_tile_store import sync
 from validate_release import ValidationError, validate
 

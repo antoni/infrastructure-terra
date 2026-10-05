@@ -5,7 +5,7 @@ import sys
 import tempfile
 import unittest
 
-SCRIPT = Path(__file__).resolve().parents[1] / "roles/services/mountain_tile_backend/files/prune_releases.py"
+SCRIPT = Path(__file__).resolve().parents[1] / ".galaxy/collections/ansible_collections/yourorg/shared_roles/roles/mountain_tile_backend/files/prune_releases.py"
 
 
 def make_release(root: Path, store: Path, name: str, archives: dict[str, str], age: int):

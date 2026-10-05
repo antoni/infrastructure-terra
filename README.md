@@ -109,6 +109,7 @@ archives in place. Automatic pruning is deferred until a retention policy exists
 Rollback uses the same playbook with the previous release ID. Clearing the
 activation variable preserves the existing `current` symlink.
 
-See [role settings and architecture](roles/services/mountain_tile_backend/README.md).
+The role itself lives in the shared roles repository for now (`antoni/roles`, `roles/mountain_tile_backend`, used here as
+`yourorg.shared_roles.mountain_tile_backend`); `make deps` installs it. See its README there for settings and architecture.
 The remote lifecycle and security probes have been run against a throwaway Debian 13 host with a self-signed
 certificate. Let's Encrypt issuance, a real domain and Cloudflare remain to be checked.

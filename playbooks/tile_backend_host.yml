@@ -28,5 +28,5 @@
       tags: [docker]
     - role: yourorg.shared_roles.reverse_proxy
       tags: [proxy]
-    - role: services/mountain_tile_backend
+    - role: yourorg.shared_roles.mountain_tile_backend
       tags: [app]

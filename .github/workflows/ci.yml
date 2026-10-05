@@ -19,6 +19,14 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
-      - run: make setup check test
+      # mountain_tile_backend and the other shared roles come from the private repository antoni/roles:
+      # ROLES_REPO_TOKEN is a fine-grained token with read access to its contents.
+      - name: Fetch the shared roles
+        env:
+          ROLES_REPO_TOKEN: ${{ secrets.ROLES_REPO_TOKEN }}
+        run: |
+          git config --global url."https://x-access-token:${ROLES_REPO_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
+          make setup deps
+      - run: make check test
       - name: Rehearse deployment, repeat run, release switch and rollback
         run: make rehearse

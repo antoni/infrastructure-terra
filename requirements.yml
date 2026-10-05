@@ -7,9 +7,10 @@ roles:
     version: 8.0.0
 
 collections:
-  # Shared roles (private repository). Pinned to a commit so a deployment is reproducible; bump the
+  # Shared roles (private repository), including mountain_tile_backend, which lives there for now.
+  # Pinned to a commit so a deployment is reproducible; bump the
   # version deliberately after reviewing what changed there. Installed as yourorg.shared_roles (the
   # namespace in that repository's galaxy.yml is still the template placeholder).
   - name: git+ssh://git@github.com/antoni/roles.git
     type: git
-    version: 10a6c53805d5dd7996d46c8a1c6e626baa198529
+    version: d6c11e9fb2d3264b5cebcc9d6252f48bd8269455

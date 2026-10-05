@@ -5,6 +5,7 @@ ignore: |
   .venv/
   .galaxy/
   .rehearsal/
+  .ansible/
 
 rules:
   comments:
