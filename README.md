@@ -10,7 +10,7 @@ this repository deploys and serves them with Nginx and `pmtiles serve`.
 Run `make setup` with Python 3.12 on the controller, then `make deps` for the roles this repository composes (`requirements.yml`):
 
 - `geerlingguy.docker` (Docker Engine, Compose plugin, `daemon.json`);
-- `yourorg.shared_roles` from the private `antoni/roles` repository, pinned to a commit; `reverse_proxy` there provides nginx, TLS, certificates and security headers. `make deps` clones it over SSH, so it needs your key. (The collection's namespace is still the template placeholder `yourorg` in its `galaxy.yml`.)
+- `yourorg.shared_roles` from the private `antoni/roles` repository, pinned to a commit; `reverse_proxy` there provides nginx and the certificates, and `mountain_tile_backend` (moved there for now) writes its own self-contained vhost on it. `make deps` clones it over SSH, so it needs your key. (The collection's namespace is still the template placeholder `yourorg` in its `galaxy.yml`.)
 
 The target needs only Python 3.9+ and SSH access with sudo; everything else is installed by those roles. The checked-in `inventory/hosts.yml` has an empty `tile_backend` group, so it selects no target. Create your private inventory from the example:
 

@@ -26,11 +26,23 @@ docker_daemon_options:
   userland-proxy: false
 
 # --- Reverse proxy (yourorg.shared_roles.reverse_proxy) ---------------------------------------------
-# The shared nginx terminates TLS for every application on the host. mountain_tile_backend only adds
-# its own vhost and includes the snippets installed here.
+# The shared nginx for every application on the host: it installs nginx and obtains the certificates.
+# mountain_tile_backend writes its own self-contained vhost on it (TLS settings, security headers and
+# rate-limit zones of its own) and reads none of the reverse_proxy_* settings.
 reverse_proxy_certificate_mode: letsencrypt_nginx
 reverse_proxy_manage_certificates: true
 reverse_proxy_certificates:
   - "{{ mountain_tile_backend_domain }}"
 # reverse_proxy_email has no safe default: set it in the private inventory (the playbook refuses the
 # role's placeholder address).
+
+# --- Tile backend (yourorg.shared_roles.mountain_tile_backend) --------------------------------------
+# The vhost's certificate files follow the proxy's certificate settings, so a host changes them in one
+# place: Let's Encrypt's files for the domain, or the files given for manual mode (the throwaway VPS uses
+# a self-signed certificate that way).
+mountain_tile_backend_tls_certificate: >-
+  {{ reverse_proxy_ssl_certificate if (reverse_proxy_certificate_mode | default('letsencrypt_nginx')) == 'manual'
+     else '/etc/letsencrypt/live/' ~ mountain_tile_backend_domain ~ '/fullchain.pem' }}
+mountain_tile_backend_tls_certificate_key: >-
+  {{ reverse_proxy_ssl_certificate_key if (reverse_proxy_certificate_mode | default('letsencrypt_nginx')) == 'manual'
+     else '/etc/letsencrypt/live/' ~ mountain_tile_backend_domain ~ '/privkey.pem' }}

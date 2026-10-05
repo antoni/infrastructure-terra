@@ -13,4 +13,4 @@ collections:
   # namespace in that repository's galaxy.yml is still the template placeholder).
   - name: git+ssh://git@github.com/antoni/roles.git
     type: git
-    version: d6c11e9fb2d3264b5cebcc9d6252f48bd8269455
+    version: cfb018944addc078a10f9c4a0481d9aa05fa09e1

@@ -9,7 +9,7 @@ needs, what exists, and in which order they would run. Nothing here has been add
 | Need | Role | Notes |
 | --- | --- | --- |
 | Docker Engine, Compose, `daemon.json` | `geerlingguy.docker` 8.0.0 | log rotation and `userland-proxy: false` set in `inventory/group_vars/tile_backend.yml` |
-| nginx, TLS, Let's Encrypt, security headers, HSTS, real IP, rate-limit zones, GeoIP | `yourorg.shared_roles.reverse_proxy` | log format is CrowdSec- and Fail2ban-friendly |
+| nginx, Let's Encrypt certificates, real IP, GeoIP (the tile vhost sets its own TLS settings, security headers, HSTS and rate-limit zones) | `yourorg.shared_roles.reverse_proxy` | log format is CrowdSec- and Fail2ban-friendly |
 | Packages | `common`, `common_utils` | `common` needs `common_packages` (no defaults); `common_utils` is a workstation toolbox: use a short package list on servers |
 | Tailscale | `tailscale` | later; defaults to the `bookworm` repo |
 
