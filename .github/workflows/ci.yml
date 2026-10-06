@@ -16,6 +16,11 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      # Every Markdown document lives in docs/.
+      - name: Markdown documents are under docs/
+        run: |
+          misplaced=$(git ls-files '*.md' | grep -v -e '^CLAUDE\.md$' -e '\(^\|/\)docs/' || true)
+          if [ -n "$misplaced" ]; then echo "Move these into docs/:"; echo "$misplaced"; exit 1; fi
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'

@@ -1,6 +1,6 @@
 # infrastructure-terra
 
-Completed work, CI evidence and the next deployment step: [handoff — 2026-10-03](docs/handoff-2026-10-03.md).
+Completed work, CI evidence and the next deployment step: [handoff — 2026-10-03](handoff-2026-10-03.md).
 
 Ansible deployment for Terra's tile origin. `terrain-platform` builds releases;
 this repository deploys and serves them with Nginx and `pmtiles serve`.
